@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
-import { listRuns, getTestDataDir } from "@ite/core"
+import { listRuns, getTestDataDir } from "@clarity/core"
 
 interface ProjectConfig {
 	id: string
@@ -52,7 +52,7 @@ export const listCommand = new Command("list")
 
 		if (allProjects.size === 0) {
 			console.log("No projects found.")
-			console.log('\nUse "ite fetch <project> --repo <url>" to add a project.')
+			console.log('\nUse "clarity fetch <project> --repo <url>" to add a project.')
 			return
 		}
 

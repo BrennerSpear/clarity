@@ -11,18 +11,18 @@
       },
     },
     "packages/cli": {
-      "name": "@ite/cli",
+      "name": "@clarity/cli",
       "version": "0.1.0",
       "bin": {
-        "ite": "./src/index.ts",
+        "clarity": "./src/index.ts",
       },
       "dependencies": {
-        "@ite/core": "workspace:*",
+        "@clarity/core": "workspace:*",
         "commander": "^12.1.0",
       },
     },
     "packages/core": {
-      "name": "@ite/core",
+      "name": "@clarity/core",
       "version": "0.1.0",
       "dependencies": {
         "yaml": "^2.6.1",
@@ -49,9 +49,9 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@1.9.4", "", { "os": "win32", "cpu": "x64" }, "sha512-8Y5wMhVIPaWe6jw2H+KlEm4wP/f7EW3810ZLmDlrEEy5KvBsb9ECEfu/kMWD484ijfQ8+nIi0giMgu9g1UAuuA=="],
 
-    "@ite/cli": ["@ite/cli@workspace:packages/cli"],
+    "@clarity/cli": ["@clarity/cli@workspace:packages/cli"],
 
-    "@ite/core": ["@ite/core@workspace:packages/core"],
+    "@clarity/core": ["@clarity/core@workspace:packages/core"],
 
     "commander": ["commander@12.1.0", "", {}, "sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA=="],
 

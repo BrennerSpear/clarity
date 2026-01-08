@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { loadRunMeta, loadParsedGraph, listRuns, getRunDir } from "@ite/core"
+import { loadRunMeta, loadParsedGraph, listRuns, getRunDir } from "@clarity/core"
 import { formatRunSummary, formatGraphSummary } from "../utils/output"
 
 export const inspectCommand = new Command("inspect")

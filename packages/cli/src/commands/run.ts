@@ -6,7 +6,7 @@ import {
 	ensureRunDir,
 	loadParsedGraph,
 	getRunDir,
-} from "@ite/core"
+} from "@clarity/core"
 import { formatRunSummary, formatGraphSummary } from "../utils/output"
 
 export const runCommand = new Command("run")

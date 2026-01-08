@@ -1,5 +1,5 @@
 {
-  "name": "infra-to-excalidraw",
+  "name": "clarity",
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
@@ -8,7 +8,7 @@
     "test": "turbo test",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "ite": "bun run packages/cli/src/index.ts"
+    "clarity": "bun run packages/cli/src/index.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

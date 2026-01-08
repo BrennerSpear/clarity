@@ -6,8 +6,8 @@ import { listCommand } from "./commands/list"
 import { inspectCommand } from "./commands/inspect"
 
 const program = new Command()
-	.name("ite")
-	.description("Infrastructure to Excalidraw - Generate architecture diagrams from IaC files")
+	.name("clarity")
+	.description("Clarity - Generate architecture diagrams from IaC files")
 	.version("0.1.0")
 
 program.addCommand(fetchCommand)

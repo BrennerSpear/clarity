@@ -9,7 +9,7 @@ TypeScript monorepo with shared pipeline core, CLI interface, and lightweight we
 ## Project Structure
 
 ```
-infra-to-excalidraw/
+clarity/
 ├── package.json              # Workspace root (with "workspaces" field)
 ├── bunfig.toml               # Bun configuration
 ├── turbo.json                # Build orchestration
@@ -495,25 +495,25 @@ export async function runStep(config: PipelineConfig, step: PipelineStep): Promi
 
 ```bash
 # Fetch IaC files from a repository
-ite fetch sentry --repo https://github.com/getsentry/self-hosted
+clarity fetch sentry --repo https://github.com/getsentry/self-hosted
 
 # List configured projects
-ite list
+clarity list
 
 # Run full pipeline
-ite run sentry
+clarity run sentry
 
 # Run specific step
-ite run sentry --step parse
+clarity run sentry --step parse
 
 # Run with specific resolution levels
-ite run sentry --levels executive,services
+clarity run sentry --levels executive,services
 
 # Inspect a previous run
-ite inspect sentry --run 2024-01-08-143022
+clarity inspect sentry --run 2024-01-08-143022
 
 # Compare two runs
-ite diff sentry --runs 2024-01-08-143022,2024-01-08-152044
+clarity diff sentry --runs 2024-01-08-143022,2024-01-08-152044
 ```
 
 ### CLI Implementation
@@ -528,7 +528,7 @@ import { listCommand } from "./commands/list"
 import { inspectCommand } from "./commands/inspect"
 
 const program = new Command()
-  .name("ite")
+  .name("clarity")
   .description("Infrastructure to Excalidraw")
   .version("0.1.0")
 
@@ -605,7 +605,7 @@ Minimal Next.js app for viewing pipeline runs and outputs.
 ```typescript
 // packages/web/src/app/api/pipeline/route.ts
 
-import { runPipeline, type PipelineConfig } from "@ite/core"
+import { runPipeline, type PipelineConfig } from "@clarity/core"
 
 export async function POST(request: Request) {
   const config: PipelineConfig = await request.json()
@@ -762,7 +762,7 @@ bun run --cwd packages/cli dev -- run sentry
 bun run build
 
 # Run the CLI (after build)
-bun run ite run sentry
+bun run clarity run sentry
 
 # Run web UI
 bun run --cwd packages/web dev

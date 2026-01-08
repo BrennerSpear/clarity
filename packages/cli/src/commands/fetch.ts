@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { writeSourceFile, ensureProjectDirs } from "@ite/core"
+import { writeSourceFile, ensureProjectDirs } from "@clarity/core"
 
 interface ProjectConfig {
 	id: string

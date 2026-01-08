@@ -1,5 +1,5 @@
-import type { InfraGraph } from "@ite/core"
-import type { PipelineRun, StepResult } from "@ite/core"
+import type { InfraGraph } from "@clarity/core"
+import type { PipelineRun, StepResult } from "@clarity/core"
 
 /**
  * Format a duration in milliseconds to human readable string
