@@ -1,0 +1,3 @@
+[install]
+# Prefer exact versions for reproducibility
+exact = true
