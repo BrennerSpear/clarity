@@ -37,10 +37,7 @@ interface DockerComposeFile {
 /**
  * Infer service type from image name
  */
-function inferServiceType(
-	serviceName: string,
-	image?: string,
-): ServiceType {
+function inferServiceType(serviceName: string, image?: string): ServiceType {
 	const name = (image ?? serviceName).toLowerCase()
 
 	// Databases
@@ -104,7 +101,9 @@ function inferServiceType(
 /**
  * Parse port strings like "8080:80" or "8080"
  */
-function parsePort(port: string | { target?: number; published?: number }): PortMapping | null {
+function parsePort(
+	port: string | { target?: number; published?: number },
+): PortMapping | null {
 	if (typeof port === "object") {
 		if (port.target) {
 			return {
@@ -168,9 +167,8 @@ function parseVolume(
 		const source = parts[0]
 		const target = parts[1]
 		if (source && target) {
-			const type: VolumeMount["type"] = source.startsWith("/") || source.startsWith(".")
-				? "bind"
-				: "volume"
+			const type: VolumeMount["type"] =
+				source.startsWith("/") || source.startsWith(".") ? "bind" : "volume"
 			return { source, target, type }
 		}
 	}
@@ -230,7 +228,9 @@ export function parseDockerCompose(
 
 	// First pass: add all services as nodes
 	for (const [serviceName, service] of Object.entries(compose.services)) {
-		const image = service.image ?? (typeof service.build === "string" ? `build:${service.build}` : undefined)
+		const image =
+			service.image ??
+			(typeof service.build === "string" ? `build:${service.build}` : undefined)
 		const type = inferServiceType(serviceName, image)
 
 		const ports = service.ports

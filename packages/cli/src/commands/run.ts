@@ -1,18 +1,27 @@
+import {
+	ensureRunDir,
+	generateRunId,
+	getRunDir,
+	loadExcalidrawFile,
+	loadParsedGraph,
+	runGenerateStep,
+	runParseStep,
+	runPipeline,
+} from "@clarity/core"
 import { Command } from "commander"
 import {
-	runPipeline,
-	runParseStep,
-	generateRunId,
-	ensureRunDir,
-	loadParsedGraph,
-	getRunDir,
-} from "@clarity/core"
-import { formatRunSummary, formatGraphSummary } from "../utils/output"
+	formatExcalidrawSummary,
+	formatGraphSummary,
+	formatRunSummary,
+} from "../utils/output"
 
 export const runCommand = new Command("run")
 	.description("Run the pipeline for a project")
 	.argument("<project>", "Project ID to process")
-	.option("-s, --step <step>", "Run only a specific step (parse, enhance, generate, validate)")
+	.option(
+		"-s, --step <step>",
+		"Run only a specific step (parse, enhance, generate, validate)",
+	)
 	.option("--no-llm", "Disable LLM enhancement")
 	.option("-v, --verbose", "Show detailed output")
 	.action(
@@ -44,9 +53,50 @@ export const runCommand = new Command("run")
 								console.log(`Edges: ${graph.edges.length}`)
 							}
 
-							console.log(`\nOutput: ${getRunDir(projectId, runId)}/${result.outputFile}`)
+							console.log(
+								`\nOutput: ${getRunDir(projectId, runId)}/${result.outputFile}`,
+							)
 						} else {
 							console.error(`\x1b[31m✗\x1b[0m Parse failed: ${result.error}`)
+							process.exit(1)
+						}
+						break
+					}
+					case "generate": {
+						// First parse
+						const { graph, result: parseResult } = await runParseStep(
+							projectId,
+							runId,
+						)
+						if (parseResult.status === "failed") {
+							console.error(
+								`\x1b[31m✗\x1b[0m Parse failed: ${parseResult.error}`,
+							)
+							process.exit(1)
+						}
+						console.log("\x1b[32m✓\x1b[0m Parse completed\n")
+
+						// Then generate
+						const { excalidraw, result } = await runGenerateStep(
+							projectId,
+							runId,
+							graph,
+						)
+
+						if (result.status === "completed") {
+							console.log("\x1b[32m✓\x1b[0m Generate completed successfully\n")
+
+							if (options.verbose) {
+								console.log(formatExcalidrawSummary(excalidraw))
+							} else {
+								console.log(`Elements: ${excalidraw.elements.length}`)
+							}
+
+							console.log(
+								`\nOutput: ${getRunDir(projectId, runId)}/${result.outputFile}`,
+							)
+						} else {
+							console.error(`\x1b[31m✗\x1b[0m Generate failed: ${result.error}`)
 							process.exit(1)
 						}
 						break
@@ -68,7 +118,7 @@ export const runCommand = new Command("run")
 				if (run.status === "completed" && options.verbose) {
 					const graph = await loadParsedGraph(projectId, run.id)
 					if (graph) {
-						console.log("\n" + formatGraphSummary(graph))
+						console.log(`\n${formatGraphSummary(graph)}`)
 					}
 				}
 

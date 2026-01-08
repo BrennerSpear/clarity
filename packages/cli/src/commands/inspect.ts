@@ -1,6 +1,16 @@
+import {
+	getRunDir,
+	listRuns,
+	loadExcalidrawFile,
+	loadParsedGraph,
+	loadRunMeta,
+} from "@clarity/core"
 import { Command } from "commander"
-import { loadRunMeta, loadParsedGraph, listRuns, getRunDir } from "@clarity/core"
-import { formatRunSummary, formatGraphSummary } from "../utils/output"
+import {
+	formatExcalidrawSummary,
+	formatGraphSummary,
+	formatRunSummary,
+} from "../utils/output"
 
 export const inspectCommand = new Command("inspect")
 	.description("Inspect a pipeline run")
@@ -59,6 +69,11 @@ export const inspectCommand = new Command("inspect")
 					if (graph) {
 						console.log(formatGraphSummary(graph))
 					}
+				} else if (options.step === "generate") {
+					const excalidraw = await loadExcalidrawFile(projectId, runId)
+					if (excalidraw) {
+						console.log(formatExcalidrawSummary(excalidraw))
+					}
 				}
 			} else {
 				// Show graph summary if parse completed
@@ -68,6 +83,16 @@ export const inspectCommand = new Command("inspect")
 					if (graph) {
 						console.log("\n--- Graph Summary ---\n")
 						console.log(formatGraphSummary(graph))
+					}
+				}
+
+				// Show Excalidraw summary if generate completed
+				const generateStep = run.steps.find((s) => s.step === "generate")
+				if (generateStep?.status === "completed") {
+					const excalidraw = await loadExcalidrawFile(projectId, runId)
+					if (excalidraw) {
+						console.log("\n--- Excalidraw Summary ---\n")
+						console.log(formatExcalidrawSummary(excalidraw))
 					}
 				}
 			}

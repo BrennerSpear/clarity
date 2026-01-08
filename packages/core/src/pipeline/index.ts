@@ -1,6 +1,17 @@
-import { readSourceFile, listSourceFiles, saveParsedGraph, saveRunMeta, generateRunId, ensureRunDir } from "./storage"
-import { parseDockerCompose } from "../parsers/docker-compose"
+import { renderToExcalidraw } from "../excalidraw/render"
+import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
+import { parseDockerCompose } from "../parsers/docker-compose"
+import {
+	ensureRunDir,
+	generateRunId,
+	listSourceFiles,
+	loadParsedGraph,
+	readSourceFile,
+	saveExcalidrawFile,
+	saveParsedGraph,
+	saveRunMeta,
+} from "./storage"
 import type { PipelineConfig, PipelineRun, StepResult } from "./types"
 
 export * from "./types"
@@ -88,9 +99,64 @@ export async function runParseStep(
 }
 
 /**
+ * Run the generate step: convert InfraGraph to Excalidraw JSON
+ */
+export async function runGenerateStep(
+	project: string,
+	runId: string,
+	graph: InfraGraph,
+): Promise<{ excalidraw: ExcalidrawFile; result: StepResult }> {
+	const startedAt = new Date().toISOString()
+	const startTime = Date.now()
+
+	try {
+		// Generate Excalidraw JSON
+		const excalidraw = renderToExcalidraw(graph)
+
+		// Save the file
+		const outputFile = await saveExcalidrawFile(project, runId, excalidraw)
+		const duration = Date.now() - startTime
+
+		return {
+			excalidraw,
+			result: {
+				step: "generate",
+				status: "completed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				outputFile,
+			},
+		}
+	} catch (error) {
+		const duration = Date.now() - startTime
+		return {
+			excalidraw: {
+				type: "excalidraw",
+				version: 2,
+				source: "clarity",
+				elements: [],
+				appState: { viewBackgroundColor: "#ffffff", gridSize: null },
+				files: {},
+			},
+			result: {
+				step: "generate",
+				status: "failed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		}
+	}
+}
+
+/**
  * Run the full pipeline for a project
  */
-export async function runPipeline(config: PipelineConfig): Promise<PipelineRun> {
+export async function runPipeline(
+	config: PipelineConfig,
+): Promise<PipelineRun> {
 	const runId = generateRunId()
 	await ensureRunDir(config.project, runId)
 
@@ -110,12 +176,30 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineRun> 
 	await saveRunMeta(config.project, runId, run)
 
 	// Run parse step
-	const { graph, result: parseResult } = await runParseStep(config.project, runId)
+	const { graph, result: parseResult } = await runParseStep(
+		config.project,
+		runId,
+	)
 	run.steps.push(parseResult)
 	run.sourceFiles = graph.metadata.sourceFiles
 
-	// Update status based on step results
 	if (parseResult.status === "failed") {
+		run.status = "failed"
+		run.completedAt = new Date().toISOString()
+		await saveRunMeta(config.project, runId, run)
+		return run
+	}
+
+	// Run generate step
+	const { result: generateResult } = await runGenerateStep(
+		config.project,
+		runId,
+		graph,
+	)
+	run.steps.push(generateResult)
+
+	// Update status based on step results
+	if (generateResult.status === "failed") {
 		run.status = "failed"
 	} else {
 		run.status = "completed"
@@ -142,6 +226,22 @@ export async function runStep(
 	switch (step) {
 		case "parse": {
 			const { result } = await runParseStep(config.project, runId)
+			return result
+		}
+		case "generate": {
+			// First need to parse
+			const { graph, result: parseResult } = await runParseStep(
+				config.project,
+				runId,
+			)
+			if (parseResult.status === "failed") {
+				return {
+					step: "generate",
+					status: "failed",
+					error: `Parse step failed: ${parseResult.error}`,
+				}
+			}
+			const { result } = await runGenerateStep(config.project, runId, graph)
 			return result
 		}
 		default:

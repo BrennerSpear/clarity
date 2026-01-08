@@ -34,7 +34,9 @@ export const ServiceNodeSchema = z.object({
 	ports: z.array(PortMappingSchema).optional(),
 	volumes: z.array(VolumeMountSchema).optional(),
 	// Environment values can be strings, numbers, booleans, or null (pass-through from host)
-	environment: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+	environment: z
+		.record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+		.optional(),
 	replicas: z.number().optional(),
 	category: z
 		.enum([
@@ -73,9 +75,7 @@ export const InfraGraphSchema = z
 	.refine(
 		(graph) => {
 			const nodeIds = new Set(graph.nodes.map((n) => n.id))
-			return graph.edges.every(
-				(e) => nodeIds.has(e.from) && nodeIds.has(e.to),
-			)
+			return graph.edges.every((e) => nodeIds.has(e.from) && nodeIds.has(e.to))
 		},
 		{ message: "Edge references non-existent node" },
 	)

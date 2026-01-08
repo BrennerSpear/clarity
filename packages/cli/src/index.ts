@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from "commander"
 import { fetchCommand } from "./commands/fetch"
-import { runCommand } from "./commands/run"
-import { listCommand } from "./commands/list"
 import { inspectCommand } from "./commands/inspect"
+import { listCommand } from "./commands/list"
+import { runCommand } from "./commands/run"
 
 const program = new Command()
 	.name("clarity")

@@ -1,7 +1,7 @@
-import { Command } from "commander"
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
-import { listRuns, getTestDataDir } from "@clarity/core"
+import { getTestDataDir, listRuns } from "@clarity/core"
+import { Command } from "commander"
 
 interface ProjectConfig {
 	id: string
@@ -34,7 +34,9 @@ export const listCommand = new Command("list")
 		let projectsWithData: string[] = []
 		try {
 			const entries = await readdir(testDataDir, { withFileTypes: true })
-			projectsWithData = entries.filter((e) => e.isDirectory()).map((e) => e.name)
+			projectsWithData = entries
+				.filter((e) => e.isDirectory())
+				.map((e) => e.name)
 		} catch {
 			// test-data doesn't exist yet
 		}
@@ -52,7 +54,9 @@ export const listCommand = new Command("list")
 
 		if (allProjects.size === 0) {
 			console.log("No projects found.")
-			console.log('\nUse "clarity fetch <project> --repo <url>" to add a project.')
+			console.log(
+				'\nUse "clarity fetch <project> --repo <url>" to add a project.',
+			)
 			return
 		}
 

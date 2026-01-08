@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeAll } from "bun:test"
-import { parseDockerCompose } from "../parsers/docker-compose"
+import { beforeAll, describe, expect, test } from "bun:test"
 import { InfraGraphSchema } from "../graph/schema"
+import { parseDockerCompose } from "../parsers/docker-compose"
 
 describe("docker-compose parser", () => {
 	test("parses simple docker-compose file", () => {
@@ -40,8 +40,12 @@ volumes:
 		expect(dbNode?.type).toBe("database")
 
 		// Check edges
-		expect(graph.edges.some((e) => e.from === "web" && e.to === "api")).toBe(true)
-		expect(graph.edges.some((e) => e.from === "api" && e.to === "db")).toBe(true)
+		expect(graph.edges.some((e) => e.from === "web" && e.to === "api")).toBe(
+			true,
+		)
+		expect(graph.edges.some((e) => e.from === "api" && e.to === "db")).toBe(
+			true,
+		)
 	})
 
 	test("infers dependencies from environment variables", () => {
@@ -62,7 +66,11 @@ services:
 
 		expect(graph.nodes.length).toBe(3)
 		// Should have inferred dependencies from env vars
-		expect(graph.edges.some((e) => e.from === "app" && e.to === "redis" && e.type === "inferred")).toBe(true)
+		expect(
+			graph.edges.some(
+				(e) => e.from === "app" && e.to === "redis" && e.type === "inferred",
+			),
+		).toBe(true)
 	})
 
 	test("validates against Zod schema", () => {

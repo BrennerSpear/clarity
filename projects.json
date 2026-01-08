@@ -1,28 +1,22 @@
 {
-  "projects": [
-    {
-      "id": "sentry",
-      "name": "Sentry",
-      "repo": "https://github.com/getsentry/self-hosted",
-      "files": [
-        { "path": "docker-compose.yml", "format": "docker-compose" }
-      ]
-    },
-    {
-      "id": "temporal",
-      "name": "Temporal",
-      "repo": "https://github.com/temporalio/docker-compose",
-      "files": [
-        { "path": "docker-compose.yml", "format": "docker-compose" }
-      ]
-    },
-    {
-      "id": "mastodon",
-      "name": "Mastodon",
-      "repo": "https://github.com/mastodon/mastodon",
-      "files": [
-        { "path": "docker-compose.yml", "format": "docker-compose" }
-      ]
-    }
-  ]
+	"projects": [
+		{
+			"id": "sentry",
+			"name": "Sentry",
+			"repo": "https://github.com/getsentry/self-hosted",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "temporal",
+			"name": "Temporal",
+			"repo": "https://github.com/temporalio/docker-compose",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "mastodon",
+			"name": "Mastodon",
+			"repo": "https://github.com/mastodon/mastodon",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		}
+	]
 }

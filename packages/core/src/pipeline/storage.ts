@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
 import type { PipelineRun, StepResult } from "./types"
 
@@ -131,6 +132,45 @@ export async function loadParsedGraph(
 }
 
 /**
+ * Save Excalidraw JSON to run directory
+ */
+export async function saveExcalidrawFile(
+	project: string,
+	runId: string,
+	excalidraw: ExcalidrawFile,
+	suffix?: string,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = suffix
+		? `03-excalidraw-${suffix}.json`
+		: "03-excalidraw.json"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(excalidraw, null, 2))
+	return filename
+}
+
+/**
+ * Load Excalidraw file from run directory
+ */
+export async function loadExcalidrawFile(
+	project: string,
+	runId: string,
+	suffix?: string,
+): Promise<ExcalidrawFile | null> {
+	const runDir = getRunDir(project, runId)
+	const filename = suffix
+		? `03-excalidraw-${suffix}.json`
+		: "03-excalidraw.json"
+	const filepath = join(runDir, filename)
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as ExcalidrawFile
+	} catch {
+		return null
+	}
+}
+
+/**
  * List all runs for a project, sorted by date descending
  */
 export async function listRuns(project: string): Promise<PipelineRun[]> {
@@ -198,10 +238,7 @@ export async function listSourceFiles(project: string): Promise<string[]> {
 	try {
 		const entries = await readdir(sourceDir)
 		return entries.filter(
-			(f) =>
-				f.endsWith(".yml") ||
-				f.endsWith(".yaml") ||
-				f.endsWith(".json"),
+			(f) => f.endsWith(".yml") || f.endsWith(".yaml") || f.endsWith(".json"),
 		)
 	} catch {
 		return []

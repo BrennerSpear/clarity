@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Excalidraw Validation</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        .drop-zone:hover {
+            border-color: #666;
+            background: #f5f5f5;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Excalidraw JSON Validator</h1>
+    <p>Drop an Excalidraw JSON file here or click to select:</p>
+
+    <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".json" style="display: none;">
+        Drop .json file here or click to browse
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const result = document.getElementById('result');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#666';
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#ccc';
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#ccc';
+            const file = e.dataTransfer.files[0];
+            if (file) validateFile(file);
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) validateFile(file);
+        });
+
+        function validateFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    validateExcalidraw(json);
+                } catch (err) {
+                    showError('Invalid JSON: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function validateExcalidraw(data) {
+            const errors = [];
+            const warnings = [];
+
+            // Check required top-level fields
+            if (data.type !== 'excalidraw') {
+                errors.push('Missing or invalid "type" field (expected "excalidraw")');
+            }
+            if (data.version !== 2) {
+                warnings.push(`Version is ${data.version}, expected 2`);
+            }
+            if (!Array.isArray(data.elements)) {
+                errors.push('Missing or invalid "elements" array');
+            }
+            if (!data.appState || typeof data.appState !== 'object') {
+                errors.push('Missing "appState" object');
+            }
+
+            // Validate elements
+            if (Array.isArray(data.elements)) {
+                const ids = new Set();
+                const validTypes = ['rectangle', 'ellipse', 'diamond', 'text', 'arrow', 'line', 'freedraw', 'image', 'frame'];
+
+                data.elements.forEach((el, i) => {
+                    if (!el.id) {
+                        errors.push(`Element ${i}: missing "id"`);
+                    } else if (ids.has(el.id)) {
+                        errors.push(`Element ${i}: duplicate id "${el.id}"`);
+                    } else {
+                        ids.add(el.id);
+                    }
+
+                    if (!validTypes.includes(el.type)) {
+                        errors.push(`Element ${i}: invalid type "${el.type}"`);
+                    }
+
+                    if (typeof el.x !== 'number' || typeof el.y !== 'number') {
+                        errors.push(`Element ${i} (${el.id}): missing or invalid x/y coordinates`);
+                    }
+
+                    if (typeof el.width !== 'number' || typeof el.height !== 'number') {
+                        errors.push(`Element ${i} (${el.id}): missing or invalid width/height`);
+                    }
+
+                    // Check text elements
+                    if (el.type === 'text') {
+                        if (typeof el.text !== 'string') {
+                            errors.push(`Text element ${el.id}: missing "text" property`);
+                        }
+                        if (typeof el.fontSize !== 'number') {
+                            errors.push(`Text element ${el.id}: missing "fontSize"`);
+                        }
+                    }
+
+                    // Check arrow bindings
+                    if (el.type === 'arrow') {
+                        if (!Array.isArray(el.points)) {
+                            errors.push(`Arrow element ${el.id}: missing "points" array`);
+                        }
+                        if (el.startBinding && !ids.has(el.startBinding.elementId) &&
+                            !data.elements.some(e => e.id === el.startBinding.elementId)) {
+                            warnings.push(`Arrow ${el.id}: startBinding references non-existent element`);
+                        }
+                        if (el.endBinding && !ids.has(el.endBinding.elementId) &&
+                            !data.elements.some(e => e.id === el.endBinding.elementId)) {
+                            warnings.push(`Arrow ${el.id}: endBinding references non-existent element`);
+                        }
+                    }
+
+                    // Check bound elements references
+                    if (el.boundElements && Array.isArray(el.boundElements)) {
+                        el.boundElements.forEach(bound => {
+                            if (!data.elements.some(e => e.id === bound.id)) {
+                                warnings.push(`Element ${el.id}: boundElement "${bound.id}" not found`);
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Display results
+            let html = '';
+
+            if (errors.length === 0) {
+                html += `<p class="success"><strong>✓ Valid Excalidraw file!</strong></p>`;
+            } else {
+                html += `<p class="error"><strong>✗ Invalid Excalidraw file</strong></p>`;
+            }
+
+            // Stats
+            const shapes = data.elements?.filter(e => ['rectangle', 'ellipse', 'diamond'].includes(e.type)).length || 0;
+            const arrows = data.elements?.filter(e => e.type === 'arrow').length || 0;
+            const texts = data.elements?.filter(e => e.type === 'text').length || 0;
+
+            html += `<h3>Summary</h3>`;
+            html += `<ul>`;
+            html += `<li>Total elements: ${data.elements?.length || 0}</li>`;
+            html += `<li>Shapes: ${shapes}</li>`;
+            html += `<li>Arrows: ${arrows}</li>`;
+            html += `<li>Text labels: ${texts}</li>`;
+            html += `</ul>`;
+
+            if (errors.length > 0) {
+                html += `<h3 class="error">Errors (${errors.length})</h3>`;
+                html += `<ul>${errors.map(e => `<li class="error">${e}</li>`).join('')}</ul>`;
+            }
+
+            if (warnings.length > 0) {
+                html += `<h3 style="color: orange;">Warnings (${warnings.length})</h3>`;
+                html += `<ul>${warnings.slice(0, 20).map(w => `<li style="color: orange;">${w}</li>`).join('')}</ul>`;
+                if (warnings.length > 20) {
+                    html += `<p>... and ${warnings.length - 20} more warnings</p>`;
+                }
+            }
+
+            if (errors.length === 0) {
+                html += `<h3>Next Steps</h3>`;
+                html += `<p>To view this diagram:</p>`;
+                html += `<ol>`;
+                html += `<li>Go to <a href="https://excalidraw.com" target="_blank">excalidraw.com</a></li>`;
+                html += `<li>Click the menu (☰) → Open</li>`;
+                html += `<li>Select your .json file</li>`;
+                html += `</ol>`;
+            }
+
+            result.innerHTML = html;
+        }
+
+        function showError(message) {
+            result.innerHTML = `<p class="error"><strong>Error:</strong> ${message}</p>`;
+        }
+    </script>
+</body>
+</html>

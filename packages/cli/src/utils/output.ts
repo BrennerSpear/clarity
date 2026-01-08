@@ -1,4 +1,4 @@
-import type { InfraGraph } from "@clarity/core"
+import type { ExcalidrawFile, InfraGraph } from "@clarity/core"
 import type { PipelineRun, StepResult } from "@clarity/core"
 
 /**
@@ -87,6 +87,43 @@ export function formatGraphSummary(graph: InfraGraph): string {
 		const depsStr = deps > 0 ? ` (${deps} dependencies)` : ""
 		lines.push(`  - ${node.name} [${node.type}]${depsStr}`)
 	}
+
+	return lines.join("\n")
+}
+
+/**
+ * Format Excalidraw file summary
+ */
+export function formatExcalidrawSummary(excalidraw: ExcalidrawFile): string {
+	const lines: string[] = []
+
+	lines.push(`Elements: ${excalidraw.elements.length}`)
+	lines.push("")
+
+	// Group elements by type
+	const byType = new Map<string, number>()
+	for (const element of excalidraw.elements) {
+		byType.set(element.type, (byType.get(element.type) ?? 0) + 1)
+	}
+
+	lines.push("Element types:")
+	for (const [type, count] of byType.entries()) {
+		lines.push(`  ${type}: ${count}`)
+	}
+
+	// Count shapes (nodes) and arrows (edges)
+	const shapes = excalidraw.elements.filter(
+		(e) =>
+			e.type === "rectangle" || e.type === "ellipse" || e.type === "diamond",
+	).length
+	const arrows = excalidraw.elements.filter((e) => e.type === "arrow").length
+	const texts = excalidraw.elements.filter((e) => e.type === "text").length
+
+	lines.push("")
+	lines.push("Summary:")
+	lines.push(`  Nodes (shapes): ${shapes}`)
+	lines.push(`  Edges (arrows): ${arrows}`)
+	lines.push(`  Labels (text): ${texts}`)
 
 	return lines.join("\n")
 }

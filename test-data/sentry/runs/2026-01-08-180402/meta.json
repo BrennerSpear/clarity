@@ -1,24 +1,22 @@
 {
-  "id": "2026-01-08-180402",
-  "project": "sentry",
-  "startedAt": "2026-01-08T23:04:02.739Z",
-  "status": "completed",
-  "steps": [
-    {
-      "step": "parse",
-      "status": "completed",
-      "startedAt": "2026-01-08T23:04:02.740Z",
-      "completedAt": "2026-01-08T23:04:03.654Z",
-      "duration": 914,
-      "outputFile": "01-parsed.json"
-    }
-  ],
-  "config": {
-    "llmEnabled": true,
-    "validationEnabled": false
-  },
-  "sourceFiles": [
-    "docker-compose.yml"
-  ],
-  "completedAt": "2026-01-08T23:04:03.654Z"
+	"id": "2026-01-08-180402",
+	"project": "sentry",
+	"startedAt": "2026-01-08T23:04:02.739Z",
+	"status": "completed",
+	"steps": [
+		{
+			"step": "parse",
+			"status": "completed",
+			"startedAt": "2026-01-08T23:04:02.740Z",
+			"completedAt": "2026-01-08T23:04:03.654Z",
+			"duration": 914,
+			"outputFile": "01-parsed.json"
+		}
+	],
+	"config": {
+		"llmEnabled": true,
+		"validationEnabled": false
+	},
+	"sourceFiles": ["docker-compose.yml"],
+	"completedAt": "2026-01-08T23:04:03.654Z"
 }

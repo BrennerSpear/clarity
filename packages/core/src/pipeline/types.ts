@@ -1,4 +1,9 @@
-export type PipelineStep = "fetch" | "parse" | "enhance" | "generate" | "validate"
+export type PipelineStep =
+	| "fetch"
+	| "parse"
+	| "enhance"
+	| "generate"
+	| "validate"
 
 export type ResolutionLevel = "executive" | "groups" | "services" | "detailed"
 

@@ -29,9 +29,7 @@ export class GraphBuilder {
 		name: string,
 		type: ServiceType,
 		source: { file: string; format: SourceFormat; line?: number },
-		options?: Partial<
-			Omit<ServiceNode, "id" | "name" | "type" | "source">
-		>,
+		options?: Partial<Omit<ServiceNode, "id" | "name" | "type" | "source">>,
 	): this {
 		this.nodes.set(id, {
 			id,
@@ -51,18 +49,30 @@ export class GraphBuilder {
 	): this {
 		// Only add edge if both nodes exist
 		if (this.nodes.has(from) && this.nodes.has(to)) {
-			// Avoid duplicate edges
-			const exists = this.edges.some(
+			// Check if any edge already exists between these nodes
+			const existingEdge = this.edges.find(
+				(e) => e.from === from && e.to === to,
+			)
+
+			// Skip inferred edges if any explicit edge already exists
+			if (type === "inferred" && existingEdge) {
+				return this
+			}
+
+			// Avoid duplicate edges with same from, to, AND type
+			const duplicateExists = this.edges.some(
 				(e) => e.from === from && e.to === to && e.type === type,
 			)
-			if (!exists) {
-				this.edges.push({
-					from,
-					to,
-					type,
-					...options,
-				})
+			if (duplicateExists) {
+				return this
 			}
+
+			this.edges.push({
+				from,
+				to,
+				type,
+				...options,
+			})
 		}
 		return this
 	}

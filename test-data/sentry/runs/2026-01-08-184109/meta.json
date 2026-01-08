@@ -1,0 +1,30 @@
+{
+	"id": "2026-01-08-184109",
+	"project": "sentry",
+	"startedAt": "2026-01-08T23:41:09.089Z",
+	"status": "completed",
+	"steps": [
+		{
+			"step": "parse",
+			"status": "completed",
+			"startedAt": "2026-01-08T23:41:09.090Z",
+			"completedAt": "2026-01-08T23:41:09.999Z",
+			"duration": 909,
+			"outputFile": "01-parsed.json"
+		},
+		{
+			"step": "generate",
+			"status": "completed",
+			"startedAt": "2026-01-08T23:41:10.000Z",
+			"completedAt": "2026-01-08T23:41:10.004Z",
+			"duration": 4,
+			"outputFile": "03-excalidraw.json"
+		}
+	],
+	"config": {
+		"llmEnabled": true,
+		"validationEnabled": false
+	},
+	"sourceFiles": ["docker-compose.yml"],
+	"completedAt": "2026-01-08T23:41:10.004Z"
+}
