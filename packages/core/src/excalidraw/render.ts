@@ -3,6 +3,16 @@
  */
 
 import type {
+	DirectedEdge,
+	EdgeDirection,
+	GroupedGraph,
+	ServiceGroup,
+} from "../graph/grouping"
+import {
+	getEdgeDirectionColor,
+	groupByDependencyPath,
+} from "../graph/grouping"
+import type {
 	InfraGraph,
 	ServiceCategory,
 	ServiceNode,
@@ -191,6 +201,7 @@ function createArrowElement(
 	endPos: NodePosition,
 	startId: string,
 	endId: string,
+	color?: string,
 ): ExcalidrawArrow {
 	const startCenter = getNodeCenter(startPos)
 	const endCenter = getNodeCenter(endPos)
@@ -213,7 +224,7 @@ function createArrowElement(
 		width: Math.abs(endPoint.x - startPoint.x),
 		height: Math.abs(endPoint.y - startPoint.y),
 		angle: 0,
-		strokeColor: "#868e96",
+		strokeColor: color ?? "#868e96",
 		backgroundColor: "transparent",
 		fillStyle: "solid",
 		strokeWidth: 2,
@@ -290,12 +301,65 @@ function renderServiceNode(
 	return elements
 }
 
+/**
+ * Render a service group to Excalidraw elements
+ */
+function renderServiceGroup(
+	group: ServiceGroup,
+	position: NodePosition,
+): ExcalidrawElement[] {
+	const elements: ExcalidrawElement[] = []
+	const shapeId = `shape-${group.id}`
+	const textId = `text-${group.id}`
+
+	// Groups use a distinct color (purple/violet for grouping)
+	const colors = {
+		stroke: "#7048e8",
+		background: "#e5dbff",
+	}
+
+	// Create shape element (rectangle for groups)
+	const shape = createShapeElement(
+		shapeId,
+		"rectangle",
+		position.x,
+		position.y,
+		position.width,
+		position.height,
+		colors,
+	)
+
+	// Add bound text reference
+	shape.boundElements = [{ id: textId, type: "text" }]
+	elements.push(shape)
+
+	// Create text element (centered in shape)
+	const text = createTextElement(
+		textId,
+		group.name,
+		position.x + position.width / 2,
+		position.y + position.height / 2,
+		position.width - LAYOUT_CONFIG.textPadding * 2,
+		shapeId,
+	)
+	elements.push(text)
+
+	return elements
+}
+
 export interface RenderOptions {
 	nodeWidth?: number
 	nodeHeight?: number
 	horizontalGap?: number
 	verticalGap?: number
 	resolution?: ResolutionLevel
+}
+
+export interface GroupedRenderOptions extends RenderOptions {
+	/** Minimum number of services to form a group (default: 2) */
+	minGroupSize?: number
+	/** Show edge direction colors */
+	showEdgeDirection?: boolean
 }
 
 /**
@@ -374,6 +438,116 @@ export function renderToExcalidraw(
  */
 export function excalidrawToJson(file: ExcalidrawFile): string {
 	return JSON.stringify(file, null, 2)
+}
+
+/**
+ * Render an InfraGraph with dependency path grouping
+ *
+ * Groups services that have identical dependencies into single nodes,
+ * and uses colored arrows to show read/write direction.
+ */
+export function renderGroupedToExcalidraw(
+	graph: InfraGraph,
+	options?: GroupedRenderOptions,
+): ExcalidrawFile {
+	const { minGroupSize = 2, showEdgeDirection = true, ...layoutOptions } =
+		options ?? {}
+
+	// Group services by dependency path
+	const grouped = groupByDependencyPath(graph, {
+		minGroupSize,
+		excludeTypes: ["database", "cache", "queue", "storage"], // Don't group infrastructure
+	})
+
+	const elements: ExcalidrawElement[] = []
+
+	// Build a combined graph for layout calculation
+	// This includes both individual nodes and groups
+	const layoutNodes: ServiceNode[] = [
+		...grouped.nodes,
+		// Create pseudo-nodes for groups
+		...grouped.groups.map((g) => ({
+			id: g.id,
+			name: g.name,
+			type: "container" as ServiceType,
+			source: { file: "grouped", format: "docker-compose" as const },
+		})),
+	]
+
+	// Build edges for layout (from groups and individuals to their dependencies)
+	const layoutEdges = grouped.edges.map((e) => ({
+		from: e.from,
+		to: e.to,
+		type: e.type,
+	}))
+
+	const layoutGraph: InfraGraph = {
+		nodes: layoutNodes,
+		edges: layoutEdges,
+		metadata: graph.metadata,
+	}
+
+	// Calculate layout with wider nodes for groups
+	const layout = calculateLayout(layoutGraph, {
+		...layoutOptions,
+		nodeWidth: 200, // Wider to fit group names
+		nodeHeight: 80,
+	})
+
+	// Render individual nodes
+	for (const node of grouped.nodes) {
+		const position = layout.positions.get(node.id)
+		if (position) {
+			elements.push(...renderServiceNode(node, position))
+		}
+	}
+
+	// Render groups
+	for (const group of grouped.groups) {
+		const position = layout.positions.get(group.id)
+		if (position) {
+			elements.push(...renderServiceGroup(group, position))
+		}
+	}
+
+	// Render edges with direction colors
+	const processedEdges = new Set<string>()
+	for (const edge of grouped.edges) {
+		const edgeKey = `${edge.from}->${edge.to}`
+		if (processedEdges.has(edgeKey)) continue
+		processedEdges.add(edgeKey)
+
+		const fromPos = layout.positions.get(edge.from)
+		const toPos = layout.positions.get(edge.to)
+
+		if (fromPos && toPos) {
+			const arrowId = `arrow-${edge.from}-${edge.to}`
+			const color = showEdgeDirection
+				? getEdgeDirectionColor(edge.direction)
+				: undefined
+			const arrow = createArrowElement(
+				arrowId,
+				fromPos,
+				toPos,
+				`shape-${edge.from}`,
+				`shape-${edge.to}`,
+				color,
+			)
+			elements.push(arrow)
+		}
+	}
+
+	return {
+		type: "excalidraw",
+		version: 2,
+		source: "clarity",
+		elements,
+		appState: {
+			viewBackgroundColor: "#ffffff",
+			gridSize: null,
+		},
+		files: {},
+	}
 }
 
 /**

@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk"
-import { renderToExcalidraw } from "../excalidraw/render"
+import { renderGroupedToExcalidraw, renderToExcalidraw } from "../excalidraw/render"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
 import { createClient, parseJsonResponse, sendMessage } from "../llm/client"
@@ -228,15 +228,18 @@ export async function runGenerateStep(
 	project: string,
 	runId: string,
 	graph: InfraGraph,
-	options?: { renderPng?: boolean },
+	options?: { renderPng?: boolean; grouped?: boolean },
 ): Promise<{ excalidraw: ExcalidrawFile; pngBuffer?: Buffer; result: GenerateStepResult }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
 	const shouldRenderPng = options?.renderPng !== false
+	const useGrouped = options?.grouped !== false // Default to grouped
 
 	try {
-		// Generate Excalidraw JSON
-		const excalidraw = renderToExcalidraw(graph)
+		// Generate Excalidraw JSON (grouped by default for cleaner diagrams)
+		const excalidraw = useGrouped
+			? renderGroupedToExcalidraw(graph, { minGroupSize: 2, showEdgeDirection: true })
+			: renderToExcalidraw(graph)
 
 		const outputFiles: string[] = []
 
@@ -395,6 +398,8 @@ export interface ExtendedPipelineConfig extends PipelineConfig {
 	png?: {
 		enabled: boolean
 	}
+	/** Group services by dependency path (default: true) */
+	grouped?: boolean
 }
 
 /**
@@ -409,6 +414,7 @@ export async function runPipeline(
 	const saveMermaid = config.mermaid?.enabled !== false
 	const renderPng = config.png?.enabled !== false
 	const validateEnabled = config.validation?.enabled ?? false
+	const useGrouped = config.grouped !== false // Default to grouped
 
 	const run: PipelineRun = {
 		id: runId,
@@ -472,7 +478,7 @@ export async function runPipeline(
 		config.project,
 		runId,
 		currentGraph,
-		{ renderPng },
+		{ renderPng, grouped: useGrouped },
 	)
 	run.steps.push(generateResult)
 	await saveRunMeta(config.project, runId, run)
