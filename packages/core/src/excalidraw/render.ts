@@ -8,10 +8,7 @@ import type {
 	GroupedGraph,
 	ServiceGroup,
 } from "../graph/grouping"
-import {
-	getEdgeDirectionColor,
-	groupByDependencyPath,
-} from "../graph/grouping"
+import { getEdgeDirectionColor, groupByDependencyPath } from "../graph/grouping"
 import type {
 	InfraGraph,
 	ServiceCategory,
@@ -29,10 +26,7 @@ import {
 	type SemanticPosition,
 	calculateSemanticLayout,
 } from "./semantic-layout"
-import {
-	createGrid,
-	findOrthogonalPath,
-} from "./pathfinding"
+import { createGrid, findOrthogonalPath } from "./pathfinding"
 import {
 	type ExcalidrawArrow,
 	type ExcalidrawDiamond,
@@ -153,21 +147,32 @@ function createShapeElement(
 function createTextElement(
 	id: string,
 	text: string,
-	x: number,
-	y: number,
-	width: number,
+	containerX: number,
+	containerY: number,
+	containerWidth: number,
+	containerHeight: number,
 	containerId: string | null = null,
 ): ExcalidrawText {
 	const fontSize = LAYOUT_CONFIG.fontSize
 	const lineHeight = 1.25
+	const textHeight = fontSize * lineHeight
+
+	// Estimate text width (rough approximation)
+	const avgCharWidth = fontSize * 0.6
+	const textWidth = Math.min(text.length * avgCharWidth, containerWidth - 20)
+
+	// For bound text, position at the center of the container
+	// Excalidraw uses these coordinates as the text bounding box origin
+	const x = containerX + (containerWidth - textWidth) / 2
+	const y = containerY + (containerHeight - textHeight) / 2
 
 	return {
 		id,
 		type: "text",
 		x,
 		y,
-		width,
-		height: fontSize * lineHeight,
+		width: textWidth,
+		height: textHeight,
 		angle: 0,
 		strokeColor: "#1e1e1e",
 		backgroundColor: "transparent",
@@ -345,7 +350,12 @@ function createArrowElement(
 	useOrthogonal = true,
 	grid?: ReturnType<typeof createGrid> | null,
 ): ExcalidrawArrow {
-	const { startPoint, points } = calculateArrowPath(startPos, endPos, useOrthogonal, grid)
+	const { startPoint, points } = calculateArrowPath(
+		startPos,
+		endPos,
+		useOrthogonal,
+		grid,
+	)
 	const bounds = calculatePathBounds(points)
 
 	return {
@@ -361,11 +371,11 @@ function createArrowElement(
 		fillStyle: "solid",
 		strokeWidth: 2,
 		strokeStyle: "solid",
-		roughness: 1,
+		roughness: 0, // No roughness for cleaner lines
 		opacity: 100,
 		groupIds: [],
 		frameId: null,
-		roundness: { type: 2 },
+		roundness: null, // No rounding for sharp corners
 		seed: generateSeed(),
 		version: 1,
 		versionNonce: generateSeed(),
@@ -378,15 +388,16 @@ function createArrowElement(
 		startBinding: {
 			elementId: startId,
 			focus: 0,
-			gap: 0,
+			gap: 1,
 		},
 		endBinding: {
 			elementId: endId,
 			focus: 0,
-			gap: 0,
+			gap: 1,
 		},
 		startArrowhead: null,
 		endArrowhead: "arrow",
+		elbowed: useOrthogonal, // Excalidraw will apply elbow routing
 	}
 }
 
@@ -423,9 +434,10 @@ function renderServiceNode(
 	const text = createTextElement(
 		textId,
 		node.name,
-		position.x + position.width / 2,
-		position.y + position.height / 2,
-		position.width - LAYOUT_CONFIG.textPadding * 2,
+		position.x,
+		position.y,
+		position.width,
+		position.height,
 		shapeId,
 	)
 	elements.push(text)
@@ -469,9 +481,10 @@ function renderServiceGroup(
 	const text = createTextElement(
 		textId,
 		group.name,
-		position.x + position.width / 2,
-		position.y + position.height / 2,
-		position.width - LAYOUT_CONFIG.textPadding * 2,
+		position.x,
+		position.y,
+		position.width,
+		position.height,
 		shapeId,
 	)
 	elements.push(text)
@@ -609,22 +622,27 @@ export function renderGroupedToExcalidraw(
 		// Build a graph with only the nodes being rendered
 		const renderedGraph: InfraGraph = {
 			nodes: grouped.nodes, // Only individual nodes that weren't grouped
-			edges: graph.edges.filter(e =>
-				grouped.nodes.some(n => n.id === e.from) ||
-				grouped.nodes.some(n => n.id === e.to)
+			edges: graph.edges.filter(
+				(e) =>
+					grouped.nodes.some((n) => n.id === e.from) ||
+					grouped.nodes.some((n) => n.id === e.to),
 			),
 			metadata: graph.metadata,
 		}
 
 		// Use semantic layout (left-to-right flow by role)
-		const semanticPositions = calculateSemanticLayout(renderedGraph, grouped.groups, {
-			nodeWidth: 180,
-			nodeHeight: 70,
-			helperWidth: 130,
-			helperHeight: 50,
-			columnGap: 220,
-			rowGap: 30,
-		})
+		const semanticPositions = calculateSemanticLayout(
+			renderedGraph,
+			grouped.groups,
+			{
+				nodeWidth: 180,
+				nodeHeight: 70,
+				helperWidth: 130,
+				helperHeight: 50,
+				columnGap: 220,
+				rowGap: 30,
+			},
+		)
 
 		// Convert SemanticPosition to NodePosition
 		positions = new Map()

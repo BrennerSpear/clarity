@@ -55,26 +55,32 @@ export async function renderExcalidrawToPng(
 
 		// Wait for Excalidraw module to be loaded
 		await page.waitForFunction(
-			() => (window as unknown as { __EXCALIDRAW_LOADED__: boolean }).__EXCALIDRAW_LOADED__,
+			() =>
+				(window as unknown as { __EXCALIDRAW_LOADED__: boolean })
+					.__EXCALIDRAW_LOADED__,
 			{ timeout: 60000 },
 		)
 
 		// Trigger export
 		await page.evaluate(() => {
-			(window as unknown as { exportToPng: () => void }).exportToPng()
+			;(window as unknown as { exportToPng: () => void }).exportToPng()
 		})
 
 		// Wait for export to complete
 		await page.waitForFunction(
-			() => (window as unknown as { __EXPORT_COMPLETE__: boolean }).__EXPORT_COMPLETE__,
+			() =>
+				(window as unknown as { __EXPORT_COMPLETE__: boolean })
+					.__EXPORT_COMPLETE__,
 			{ timeout: 60000 },
 		)
 
 		// Get the exported PNG data and any errors
 		const result = await page.evaluate(() => {
 			return {
-				data: (window as unknown as { __EXPORT_DATA__: string }).__EXPORT_DATA__,
-				error: (window as unknown as { __EXPORT_ERROR__: string }).__EXPORT_ERROR__,
+				data: (window as unknown as { __EXPORT_DATA__: string })
+					.__EXPORT_DATA__,
+				error: (window as unknown as { __EXPORT_ERROR__: string })
+					.__EXPORT_ERROR__,
 			}
 		})
 
@@ -102,6 +108,17 @@ function createExcalidrawExportHtml(
 <html>
 <head>
   <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+      "react/jsx-dev-runtime": "https://esm.sh/react@18.2.0/jsx-dev-runtime",
+      "react-dom": "https://esm.sh/react-dom@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+    }
+  }
+  </script>
   <style>
     * { margin: 0; padding: 0; }
     body { background: ${options.backgroundColor}; }
@@ -112,6 +129,10 @@ function createExcalidrawExportHtml(
   <div id="root"></div>
 
   <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { Excalidraw, exportToBlob } from 'https://esm.sh/@excalidraw/excalidraw@0.18.0?external=react,react-dom';
+
     window.__EXPORT_COMPLETE__ = false;
     window.__EXPORT_DATA__ = null;
     window.__EXPORT_ERROR__ = null;
@@ -119,19 +140,58 @@ function createExcalidrawExportHtml(
 
     const data = ${data};
 
-    // Use esm.sh to load Excalidraw (it handles ESM -> browser conversion)
-    const { exportToBlob, exportToCanvas } = await import('https://esm.sh/@excalidraw/excalidraw@0.18.0?bundle');
-    window.__EXCALIDRAW_LOADED__ = true;
+    // Reference to the Excalidraw API
+    let excalidrawAPI = null;
 
-    window.exportToPng = async function() {
-      try {
-        const blob = await exportToBlob({
+    // Create the Excalidraw component
+    const App = () => {
+      return React.createElement(Excalidraw, {
+        excalidrawAPI: (api) => {
+          excalidrawAPI = api;
+          window.__EXCALIDRAW_LOADED__ = true;
+        },
+        initialData: {
           elements: data.elements || [],
           appState: {
-            exportBackground: true,
             viewBackgroundColor: "${options.backgroundColor}",
           },
           files: data.files || {},
+        },
+        UIOptions: {
+          canvasActions: {
+            export: false,
+            loadScene: false,
+            saveToActiveFile: false,
+          },
+        },
+      });
+    };
+
+    // Render the app
+    const root = createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+
+    window.exportToPng = async function() {
+      try {
+        if (!excalidrawAPI) {
+          window.__EXPORT_ERROR__ = 'Excalidraw API not ready';
+          window.__EXPORT_COMPLETE__ = true;
+          return;
+        }
+
+        // Get the processed elements from Excalidraw (with elbow routing applied)
+        const elements = excalidrawAPI.getSceneElements();
+        const appState = excalidrawAPI.getAppState();
+        const files = excalidrawAPI.getFiles();
+
+        const blob = await exportToBlob({
+          elements,
+          appState: {
+            ...appState,
+            exportBackground: true,
+            viewBackgroundColor: "${options.backgroundColor}",
+          },
+          files,
         });
 
         const reader = new FileReader();
@@ -145,22 +205,8 @@ function createExcalidrawExportHtml(
         };
         reader.readAsDataURL(blob);
       } catch (error) {
-        // Fallback: try exportToCanvas
-        try {
-          const canvas = await exportToCanvas({
-            elements: data.elements || [],
-            appState: {
-              exportBackground: true,
-              viewBackgroundColor: "${options.backgroundColor}",
-            },
-            files: data.files || {},
-          });
-          window.__EXPORT_DATA__ = canvas.toDataURL('image/png').split(',')[1];
-          window.__EXPORT_COMPLETE__ = true;
-        } catch (fallbackError) {
-          window.__EXPORT_ERROR__ = 'Both export methods failed: ' + error.message + ' / ' + fallbackError.message;
-          window.__EXPORT_COMPLETE__ = true;
-        }
+        window.__EXPORT_ERROR__ = 'Export failed: ' + error.message;
+        window.__EXPORT_COMPLETE__ = true;
       }
     };
   </script>

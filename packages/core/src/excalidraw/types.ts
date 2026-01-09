@@ -83,6 +83,12 @@ export interface Point {
 	y: number
 }
 
+export interface FixedSegment {
+	index: number
+	start: [number, number]
+	end: [number, number]
+}
+
 export interface ExcalidrawArrow extends ExcalidrawElementBase {
 	type: "arrow"
 	points: [number, number][]
@@ -90,14 +96,18 @@ export interface ExcalidrawArrow extends ExcalidrawElementBase {
 		elementId: string
 		focus: number
 		gap: number
+		fixedPoint?: [number, number] | null
 	} | null
 	endBinding: {
 		elementId: string
 		focus: number
 		gap: number
+		fixedPoint?: [number, number] | null
 	} | null
 	startArrowhead: Arrowhead
 	endArrowhead: Arrowhead
+	elbowed?: boolean
+	fixedSegments?: FixedSegment[] | null
 }
 
 export interface ExcalidrawLine extends ExcalidrawElementBase {
