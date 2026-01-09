@@ -26,6 +26,14 @@ import {
 	getNodeCenter,
 } from "./layout"
 import {
+	type SemanticPosition,
+	calculateSemanticLayout,
+} from "./semantic-layout"
+import {
+	createGrid,
+	findOrthogonalPath,
+} from "./pathfinding"
+import {
 	type ExcalidrawArrow,
 	type ExcalidrawDiamond,
 	type ExcalidrawElement,
@@ -268,6 +276,63 @@ function calculateOrthogonalPath(
 }
 
 /**
+ * Calculate arrow path points based on routing mode
+ */
+function calculateArrowPath(
+	startPos: NodePosition,
+	endPos: NodePosition,
+	useOrthogonal: boolean,
+	grid?: ReturnType<typeof createGrid> | null,
+): { startPoint: { x: number; y: number }; points: [number, number][] } {
+	// A* pathfinding (best quality)
+	if (useOrthogonal && grid) {
+		const result = findOrthogonalPath(grid, startPos, endPos)
+		return { startPoint: result.startPoint, points: result.path }
+	}
+
+	// Simple orthogonal routing (fallback)
+	if (useOrthogonal) {
+		const path = calculateOrthogonalPath(startPos, endPos)
+		return { startPoint: path.startPoint, points: path.points }
+	}
+
+	// Straight line
+	const startCenter = getNodeCenter(startPos)
+	const endCenter = getNodeCenter(endPos)
+	const startPoint = getConnectionPoint(startPos, endCenter.x, endCenter.y)
+	const endPoint = getConnectionPoint(endPos, startCenter.x, startCenter.y)
+	return {
+		startPoint,
+		points: [
+			[0, 0],
+			[endPoint.x - startPoint.x, endPoint.y - startPoint.y],
+		],
+	}
+}
+
+/**
+ * Calculate bounding box from path points
+ */
+function calculatePathBounds(points: [number, number][]): {
+	minX: number
+	maxX: number
+	minY: number
+	maxY: number
+} {
+	let minX = 0
+	let maxX = 0
+	let minY = 0
+	let maxY = 0
+	for (const [px, py] of points) {
+		minX = Math.min(minX, px)
+		maxX = Math.max(maxX, px)
+		minY = Math.min(minY, py)
+		maxY = Math.max(maxY, py)
+	}
+	return { minX, maxX, minY, maxY }
+}
+
+/**
  * Create an arrow element connecting two nodes
  */
 function createArrowElement(
@@ -278,42 +343,18 @@ function createArrowElement(
 	endId: string,
 	color?: string,
 	useOrthogonal = true,
+	grid?: ReturnType<typeof createGrid> | null,
 ): ExcalidrawArrow {
-	let startPoint: { x: number; y: number }
-	let points: [number, number][]
-
-	if (useOrthogonal) {
-		const path = calculateOrthogonalPath(startPos, endPos)
-		startPoint = path.startPoint
-		points = path.points
-	} else {
-		// Original straight-line logic
-		const startCenter = getNodeCenter(startPos)
-		const endCenter = getNodeCenter(endPos)
-		startPoint = getConnectionPoint(startPos, endCenter.x, endCenter.y)
-		const endPoint = getConnectionPoint(endPos, startCenter.x, startCenter.y)
-		points = [
-			[0, 0],
-			[endPoint.x - startPoint.x, endPoint.y - startPoint.y],
-		]
-	}
-
-	// Calculate bounding box for the arrow
-	let minX = 0, maxX = 0, minY = 0, maxY = 0
-	for (const [px, py] of points) {
-		minX = Math.min(minX, px)
-		maxX = Math.max(maxX, px)
-		minY = Math.min(minY, py)
-		maxY = Math.max(maxY, py)
-	}
+	const { startPoint, points } = calculateArrowPath(startPos, endPos, useOrthogonal, grid)
+	const bounds = calculatePathBounds(points)
 
 	return {
 		id,
 		type: "arrow",
 		x: startPoint.x,
 		y: startPoint.y,
-		width: maxX - minX,
-		height: maxY - minY,
+		width: bounds.maxX - bounds.minX,
+		height: bounds.maxY - bounds.minY,
 		angle: 0,
 		strokeColor: color ?? "#868e96",
 		backgroundColor: "transparent",
@@ -337,12 +378,12 @@ function createArrowElement(
 		startBinding: {
 			elementId: startId,
 			focus: 0,
-			gap: 1,
+			gap: 0,
 		},
 		endBinding: {
 			elementId: endId,
 			focus: 0,
-			gap: 1,
+			gap: 0,
 		},
 		startArrowhead: null,
 		endArrowhead: "arrow",
@@ -451,6 +492,10 @@ export interface GroupedRenderOptions extends RenderOptions {
 	minGroupSize?: number
 	/** Show edge direction colors */
 	showEdgeDirection?: boolean
+	/** Use semantic left-to-right layout (default: true) */
+	useSemanticLayout?: boolean
+	/** Use orthogonal (right-angle) arrows instead of straight (default: true) */
+	orthogonalArrows?: boolean
 }
 
 /**
@@ -541,8 +586,13 @@ export function renderGroupedToExcalidraw(
 	graph: InfraGraph,
 	options?: GroupedRenderOptions,
 ): ExcalidrawFile {
-	const { minGroupSize = 2, showEdgeDirection = true, ...layoutOptions } =
-		options ?? {}
+	const {
+		minGroupSize = 2,
+		showEdgeDirection = true,
+		useSemanticLayout = true,
+		orthogonalArrows = true,
+		...layoutOptions
+	} = options ?? {}
 
 	// Group services by dependency path
 	const grouped = groupByDependencyPath(graph, {
@@ -552,42 +602,77 @@ export function renderGroupedToExcalidraw(
 
 	const elements: ExcalidrawElement[] = []
 
-	// Build a combined graph for layout calculation
-	// This includes both individual nodes and groups
-	const layoutNodes: ServiceNode[] = [
-		...grouped.nodes,
-		// Create pseudo-nodes for groups
-		...grouped.groups.map((g) => ({
-			id: g.id,
-			name: g.name,
-			type: "container" as ServiceType,
-			source: { file: "grouped", format: "docker-compose" as const },
-		})),
-	]
+	// Calculate layout
+	let positions: Map<string, NodePosition>
 
-	// Build edges for layout (from groups and individuals to their dependencies)
-	const layoutEdges = grouped.edges.map((e) => ({
-		from: e.from,
-		to: e.to,
-		type: e.type,
-	}))
+	if (useSemanticLayout) {
+		// Build a graph with only the nodes being rendered
+		const renderedGraph: InfraGraph = {
+			nodes: grouped.nodes, // Only individual nodes that weren't grouped
+			edges: graph.edges.filter(e =>
+				grouped.nodes.some(n => n.id === e.from) ||
+				grouped.nodes.some(n => n.id === e.to)
+			),
+			metadata: graph.metadata,
+		}
 
-	const layoutGraph: InfraGraph = {
-		nodes: layoutNodes,
-		edges: layoutEdges,
-		metadata: graph.metadata,
+		// Use semantic layout (left-to-right flow by role)
+		const semanticPositions = calculateSemanticLayout(renderedGraph, grouped.groups, {
+			nodeWidth: 180,
+			nodeHeight: 70,
+			helperWidth: 130,
+			helperHeight: 50,
+			columnGap: 220,
+			rowGap: 30,
+		})
+
+		// Convert SemanticPosition to NodePosition
+		positions = new Map()
+		for (const [id, pos] of semanticPositions) {
+			positions.set(id, {
+				id: pos.id,
+				x: pos.x,
+				y: pos.y,
+				width: pos.width,
+				height: pos.height,
+				layer: pos.column,
+			})
+		}
+	} else {
+		// Use standard layout
+		const layoutNodes: ServiceNode[] = [
+			...grouped.nodes,
+			...grouped.groups.map((g) => ({
+				id: g.id,
+				name: g.name,
+				type: "container" as ServiceType,
+				source: { file: "grouped", format: "docker-compose" as const },
+			})),
+		]
+
+		const layoutEdges = grouped.edges.map((e) => ({
+			from: e.from,
+			to: e.to,
+			type: e.type,
+		}))
+
+		const layoutGraph: InfraGraph = {
+			nodes: layoutNodes,
+			edges: layoutEdges,
+			metadata: graph.metadata,
+		}
+
+		const layout = calculateLayout(layoutGraph, {
+			...layoutOptions,
+			nodeWidth: 200,
+			nodeHeight: 80,
+		})
+		positions = layout.positions
 	}
-
-	// Calculate layout with wider nodes for groups
-	const layout = calculateLayout(layoutGraph, {
-		...layoutOptions,
-		nodeWidth: 200, // Wider to fit group names
-		nodeHeight: 80,
-	})
 
 	// Render individual nodes
 	for (const node of grouped.nodes) {
-		const position = layout.positions.get(node.id)
+		const position = positions.get(node.id)
 		if (position) {
 			elements.push(...renderServiceNode(node, position))
 		}
@@ -595,11 +680,14 @@ export function renderGroupedToExcalidraw(
 
 	// Render groups
 	for (const group of grouped.groups) {
-		const position = layout.positions.get(group.id)
+		const position = positions.get(group.id)
 		if (position) {
 			elements.push(...renderServiceGroup(group, position))
 		}
 	}
+
+	// Create pathfinding grid if using orthogonal arrows
+	const grid = orthogonalArrows ? createGrid(positions) : null
 
 	// Render edges with direction colors
 	const processedEdges = new Set<string>()
@@ -608,8 +696,8 @@ export function renderGroupedToExcalidraw(
 		if (processedEdges.has(edgeKey)) continue
 		processedEdges.add(edgeKey)
 
-		const fromPos = layout.positions.get(edge.from)
-		const toPos = layout.positions.get(edge.to)
+		const fromPos = positions.get(edge.from)
+		const toPos = positions.get(edge.to)
 
 		if (fromPos && toPos) {
 			const arrowId = `arrow-${edge.from}-${edge.to}`
@@ -623,6 +711,8 @@ export function renderGroupedToExcalidraw(
 				`shape-${edge.from}`,
 				`shape-${edge.to}`,
 				color,
+				orthogonalArrows,
+				grid,
 			)
 			elements.push(arrow)
 		}
