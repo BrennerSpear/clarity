@@ -2,7 +2,8 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
-import type { PipelineRun, StepResult } from "./types"
+import type { PipelineRun, ResolutionLevel, StepResult } from "./types"
+import type { ValidationSummary, VisualValidationResult } from "./validate"
 
 /**
  * Generate a run ID from current timestamp
@@ -274,5 +275,152 @@ export async function listSourceFiles(project: string): Promise<string[]> {
 		)
 	} catch {
 		return []
+	}
+}
+
+/**
+ * Save PNG file to run directory
+ */
+export async function savePngFile(
+	project: string,
+	runId: string,
+	buffer: Buffer,
+	suffix?: string,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = suffix ? `03-excalidraw-${suffix}.png` : "03-excalidraw.png"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, buffer)
+	return filename
+}
+
+/**
+ * Get PNG file path
+ */
+export function getPngPath(
+	project: string,
+	runId: string,
+	suffix?: string,
+): string {
+	const runDir = getRunDir(project, runId)
+	const filename = suffix ? `03-excalidraw-${suffix}.png` : "03-excalidraw.png"
+	return join(runDir, filename)
+}
+
+/**
+ * Load PNG file from run directory
+ */
+export async function loadPngFile(
+	project: string,
+	runId: string,
+	suffix?: string,
+): Promise<Buffer | null> {
+	const filepath = getPngPath(project, runId, suffix)
+	try {
+		return await readFile(filepath)
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Save Mermaid file to run directory
+ */
+export async function saveMermaidFile(
+	project: string,
+	runId: string,
+	content: string,
+	suffix?: string,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = suffix ? `${suffix}.mermaid` : "01-parsed.mermaid"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, content)
+	return filename
+}
+
+/**
+ * Load Mermaid file from run directory
+ */
+export async function loadMermaidFile(
+	project: string,
+	runId: string,
+	suffix?: string,
+): Promise<string | null> {
+	const runDir = getRunDir(project, runId)
+	const filename = suffix ? `${suffix}.mermaid` : "01-parsed.mermaid"
+	const filepath = join(runDir, filename)
+	try {
+		return await readFile(filepath, "utf-8")
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Save validation result for a specific resolution level
+ */
+export async function saveValidationResult(
+	project: string,
+	runId: string,
+	result: VisualValidationResult,
+	level: ResolutionLevel,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = `04-validation-${level}.json`
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(result, null, 2))
+	return filename
+}
+
+/**
+ * Load validation result for a specific resolution level
+ */
+export async function loadValidationResult(
+	project: string,
+	runId: string,
+	level: ResolutionLevel,
+): Promise<VisualValidationResult | null> {
+	const runDir = getRunDir(project, runId)
+	const filename = `04-validation-${level}.json`
+	const filepath = join(runDir, filename)
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as VisualValidationResult
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Save validation summary
+ */
+export async function saveValidationSummary(
+	project: string,
+	runId: string,
+	summary: ValidationSummary,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = "04-validation-summary.json"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(summary, null, 2))
+	return filename
+}
+
+/**
+ * Load validation summary
+ */
+export async function loadValidationSummary(
+	project: string,
+	runId: string,
+): Promise<ValidationSummary | null> {
+	const runDir = getRunDir(project, runId)
+	const filename = "04-validation-summary.json"
+	const filepath = join(runDir, filename)
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as ValidationSummary
+	} catch {
+		return null
 	}
 }

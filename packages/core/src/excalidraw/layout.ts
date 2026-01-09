@@ -163,6 +163,7 @@ export function calculateLayout(
 		nodeHeight?: number
 		horizontalGap?: number
 		verticalGap?: number
+		maxNodesPerRow?: number
 	},
 ): LayoutResult {
 	const {
@@ -170,6 +171,7 @@ export function calculateLayout(
 		nodeHeight = LAYOUT_CONFIG.nodeHeight,
 		horizontalGap = LAYOUT_CONFIG.horizontalGap,
 		verticalGap = LAYOUT_CONFIG.verticalGap,
+		maxNodesPerRow = 8, // Limit nodes per row for readability
 	} = options ?? {}
 
 	const positions = new Map<string, NodePosition>()
@@ -185,14 +187,16 @@ export function calculateLayout(
 	// Find max layer
 	const maxLayer = Math.max(...layers.values())
 
-	// Calculate positions layer by layer (bottom to top, with dependencies at bottom)
+	// Calculate positions layer by layer
+	// Track current Y offset accounting for wrapped layers
+	let currentY = 0
 	let maxWidth = 0
 
-	for (let layer = 0; layer <= maxLayer; layer++) {
+	for (let layer = maxLayer; layer >= 0; layer--) {
 		let nodes = layerGroups.get(layer) ?? []
 
 		// Sort nodes to minimize crossings (if previous layers are positioned)
-		if (layer > 0) {
+		if (layer < maxLayer) {
 			nodes = sortNodesInLayer(
 				nodes,
 				layer,
@@ -202,52 +206,54 @@ export function calculateLayout(
 			)
 		}
 
-		// Calculate Y position for this layer (invert so dependencies are at top)
-		const y = (maxLayer - layer) * (nodeHeight + verticalGap)
-
-		// Calculate total width of this layer
-		const layerWidth =
-			nodes.length * nodeWidth + (nodes.length - 1) * horizontalGap
-
-		// Center the layer
-		const startX = 0
-
-		// Position each node in the layer
-		for (let i = 0; i < nodes.length; i++) {
-			const node = nodes[i]
-			if (!node) continue
-
-			const x = startX + i * (nodeWidth + horizontalGap)
-
-			positions.set(node.id, {
-				id: node.id,
-				x,
-				y,
-				width: nodeWidth,
-				height: nodeHeight,
-				layer,
-			})
+		// Split nodes into rows if they exceed maxNodesPerRow
+		const rows: ServiceNode[][] = []
+		for (let i = 0; i < nodes.length; i += maxNodesPerRow) {
+			rows.push(nodes.slice(i, i + maxNodesPerRow))
 		}
 
-		maxWidth = Math.max(maxWidth, layerWidth)
-	}
+		// Position each row
+		for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+			const rowNodes = rows[rowIndex]
+			if (!rowNodes) continue
 
-	// Center all layers horizontally
-	for (let layer = 0; layer <= maxLayer; layer++) {
-		const nodes = layerGroups.get(layer) ?? []
-		const layerWidth =
-			nodes.length * nodeWidth + (nodes.length - 1) * horizontalGap
-		const offset = (maxWidth - layerWidth) / 2
+			// Calculate total width of this row
+			const rowWidth =
+				rowNodes.length * nodeWidth + (rowNodes.length - 1) * horizontalGap
+			maxWidth = Math.max(maxWidth, rowWidth)
 
-		for (const node of nodes) {
-			const pos = positions.get(node.id)
-			if (pos) {
-				pos.x += offset
+			// Position each node in the row
+			for (let i = 0; i < rowNodes.length; i++) {
+				const node = rowNodes[i]
+				if (!node) continue
+
+				const x = i * (nodeWidth + horizontalGap)
+
+				positions.set(node.id, {
+					id: node.id,
+					x,
+					y: currentY,
+					width: nodeWidth,
+					height: nodeHeight,
+					layer,
+				})
 			}
+
+			currentY += nodeHeight + verticalGap
 		}
 	}
 
-	const height = (maxLayer + 1) * (nodeHeight + verticalGap) - verticalGap
+	// Center all nodes horizontally within the max width
+	for (const pos of positions.values()) {
+		// Find all nodes in the same Y position to calculate row width
+		const nodesAtY = [...positions.values()].filter((p) => p.y === pos.y)
+		const rowWidth =
+			nodesAtY.length * nodeWidth + (nodesAtY.length - 1) * horizontalGap
+		const offset = (maxWidth - rowWidth) / 2
+		pos.x += offset
+	}
+
+	const height = currentY - verticalGap
 
 	return { positions, width: maxWidth, height }
 }

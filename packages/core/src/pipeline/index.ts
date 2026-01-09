@@ -8,21 +8,37 @@ import {
 	applyEnhancements,
 	buildEnhancePrompt,
 } from "../llm/prompts"
+import { graphToMermaid, graphToMermaidStyled } from "../output/mermaid"
+import { renderExcalidrawToPng } from "../output/png"
 import { parseDockerCompose } from "../parsers/docker-compose"
 import {
 	ensureRunDir,
 	generateRunId,
+	getPngPath,
 	listSourceFiles,
 	readSourceFile,
 	saveEnhancedGraph,
 	saveExcalidrawFile,
+	saveMermaidFile,
 	saveParsedGraph,
+	savePngFile,
 	saveRunMeta,
+	saveValidationResult,
+	saveValidationSummary,
 } from "./storage"
-import type { PipelineConfig, PipelineRun, StepResult } from "./types"
+import type { PipelineConfig, PipelineRun, ResolutionLevel, StepResult } from "./types"
+import {
+	type ValidationSummary,
+	type VisualValidationResult,
+	calculateAverageScore,
+	createValidationSummary,
+	isValidationPassing,
+	validateDiagram,
+} from "./validate"
 
 export * from "./types"
 export * from "./storage"
+export * from "./validate"
 
 /**
  * Run the parse step: parse all source files into an InfraGraph
@@ -30,6 +46,7 @@ export * from "./storage"
 export async function runParseStep(
 	project: string,
 	runId: string,
+	options?: { saveMermaid?: boolean },
 ): Promise<{ graph: InfraGraph; result: StepResult }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
@@ -66,7 +83,19 @@ export async function runParseStep(
 		const content = await readSourceFile(project, filename)
 		const graph = parseDockerCompose(content, filename, project)
 
+		const outputFiles: string[] = []
+
+		// Save parsed graph
 		const outputFile = await saveParsedGraph(project, runId, graph)
+		outputFiles.push(outputFile)
+
+		// Optionally save Mermaid debug output
+		if (options?.saveMermaid !== false) {
+			const mermaid = graphToMermaid(graph)
+			const mermaidFile = await saveMermaidFile(project, runId, mermaid, "01-parsed")
+			outputFiles.push(mermaidFile)
+		}
+
 		const duration = Date.now() - startTime
 
 		return {
@@ -78,6 +107,7 @@ export async function runParseStep(
 				completedAt: new Date().toISOString(),
 				duration,
 				outputFile,
+				outputFiles,
 			},
 		}
 	} catch (error) {
@@ -122,6 +152,7 @@ export async function runEnhanceStep(
 	graph: InfraGraph,
 	client?: Anthropic,
 	model?: string,
+	options?: { saveMermaid?: boolean },
 ): Promise<{ graph: InfraGraph; result: EnhanceStepResult }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
@@ -139,8 +170,19 @@ export async function runEnhanceStep(
 		const enhancements = parseJsonResponse<EnhancementResponse>(response)
 		const enhancedGraph = applyEnhancements(graph, enhancements)
 
+		const outputFiles: string[] = []
+
 		// Save enhanced graph
 		const outputFile = await saveEnhancedGraph(project, runId, enhancedGraph)
+		outputFiles.push(outputFile)
+
+		// Optionally save styled Mermaid output
+		if (options?.saveMermaid !== false) {
+			const mermaid = graphToMermaidStyled(enhancedGraph)
+			const mermaidFile = await saveMermaidFile(project, runId, mermaid, "02-enhanced")
+			outputFiles.push(mermaidFile)
+		}
+
 		const duration = Date.now() - startTime
 
 		return {
@@ -152,6 +194,7 @@ export async function runEnhanceStep(
 				completedAt: new Date().toISOString(),
 				duration,
 				outputFile,
+				outputFiles,
 				llmModel,
 			},
 		}
@@ -172,26 +215,56 @@ export async function runEnhanceStep(
 }
 
 /**
- * Run the generate step: convert InfraGraph to Excalidraw JSON
+ * Generate step result with PNG rendering info
+ */
+export interface GenerateStepResult extends StepResult {
+	pngGenerated?: boolean
+}
+
+/**
+ * Run the generate step: convert InfraGraph to Excalidraw JSON and PNG
  */
 export async function runGenerateStep(
 	project: string,
 	runId: string,
 	graph: InfraGraph,
-): Promise<{ excalidraw: ExcalidrawFile; result: StepResult }> {
+	options?: { renderPng?: boolean },
+): Promise<{ excalidraw: ExcalidrawFile; pngBuffer?: Buffer; result: GenerateStepResult }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
+	const shouldRenderPng = options?.renderPng !== false
 
 	try {
 		// Generate Excalidraw JSON
 		const excalidraw = renderToExcalidraw(graph)
 
-		// Save the file
+		const outputFiles: string[] = []
+
+		// Save the Excalidraw JSON file
 		const outputFile = await saveExcalidrawFile(project, runId, excalidraw)
+		outputFiles.push(outputFile)
+
+		// Render to PNG if enabled
+		let pngBuffer: Buffer | undefined
+		if (shouldRenderPng) {
+			try {
+				pngBuffer = await renderExcalidrawToPng(excalidraw)
+				const pngFile = await savePngFile(project, runId, pngBuffer)
+				outputFiles.push(pngFile)
+			} catch (pngError) {
+				// Log but don't fail - PNG is optional
+				console.warn(
+					"PNG rendering failed:",
+					pngError instanceof Error ? pngError.message : String(pngError),
+				)
+			}
+		}
+
 		const duration = Date.now() - startTime
 
 		return {
 			excalidraw,
+			pngBuffer,
 			result: {
 				step: "generate",
 				status: "completed",
@@ -199,6 +272,8 @@ export async function runGenerateStep(
 				completedAt: new Date().toISOString(),
 				duration,
 				outputFile,
+				outputFiles,
+				pngGenerated: !!pngBuffer,
 			},
 		}
 	} catch (error) {
@@ -225,13 +300,115 @@ export async function runGenerateStep(
 }
 
 /**
+ * Validate step result with validation details
+ */
+export interface ValidateStepResult extends StepResult {
+	llmModel?: string
+	tokensUsed?: number
+	validationPassed?: boolean
+	averageScore?: number
+}
+
+/**
+ * Run the validate step: use Claude Vision to validate the generated diagram
+ */
+export async function runValidateStep(
+	project: string,
+	runId: string,
+	graph: InfraGraph,
+	pngBuffer: Buffer,
+	client?: Anthropic,
+	model?: string,
+): Promise<{ validationResult: VisualValidationResult; result: ValidateStepResult }> {
+	const startedAt = new Date().toISOString()
+	const startTime = Date.now()
+
+	try {
+		const llmClient = client ?? createClient()
+		const llmModel = model ?? "claude-sonnet-4-20250514"
+
+		// Validate the diagram
+		const validationResult = await validateDiagram(pngBuffer, graph, llmClient, llmModel)
+
+		const outputFiles: string[] = []
+
+		// Save validation result
+		const outputFile = await saveValidationResult(project, runId, validationResult, "services")
+		outputFiles.push(outputFile)
+
+		// Create and save summary
+		const summary = createValidationSummary({ services: validationResult })
+		const summaryFile = await saveValidationSummary(project, runId, summary)
+		outputFiles.push(summaryFile)
+
+		const duration = Date.now() - startTime
+		const passed = isValidationPassing(validationResult)
+		const avgScore = calculateAverageScore(validationResult)
+
+		return {
+			validationResult,
+			result: {
+				step: "validate",
+				status: "completed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				outputFile,
+				outputFiles,
+				llmModel,
+				validationPassed: passed,
+				averageScore: avgScore,
+			},
+		}
+	} catch (error) {
+		const duration = Date.now() - startTime
+		return {
+			validationResult: {
+				valid: false,
+				issues: [error instanceof Error ? error.message : String(error)],
+				suggestions: [],
+				scores: { completeness: 0, clarity: 0, connections: 0, grouping: 0 },
+			},
+			result: {
+				step: "validate",
+				status: "failed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		}
+	}
+}
+
+/**
+ * Pipeline run config with validation options
+ */
+export interface ExtendedPipelineConfig extends PipelineConfig {
+	validation?: {
+		enabled: boolean
+		model?: string
+	}
+	mermaid?: {
+		enabled: boolean
+	}
+	png?: {
+		enabled: boolean
+	}
+}
+
+/**
  * Run the full pipeline for a project
  */
 export async function runPipeline(
-	config: PipelineConfig,
+	config: ExtendedPipelineConfig,
 ): Promise<PipelineRun> {
 	const runId = generateRunId()
 	await ensureRunDir(config.project, runId)
+
+	const saveMermaid = config.mermaid?.enabled !== false
+	const renderPng = config.png?.enabled !== false
+	const validateEnabled = config.validation?.enabled ?? false
 
 	const run: PipelineRun = {
 		id: runId,
@@ -241,7 +418,7 @@ export async function runPipeline(
 		steps: [],
 		config: {
 			llmEnabled: config.llm?.enabled ?? false,
-			validationEnabled: false,
+			validationEnabled: validateEnabled,
 			resolutionLevels: config.excalidraw?.resolutionLevels,
 		},
 	}
@@ -253,6 +430,7 @@ export async function runPipeline(
 	const { graph: parsedGraph, result: parseResult } = await runParseStep(
 		config.project,
 		runId,
+		{ saveMermaid },
 	)
 	run.steps.push(parseResult)
 	run.sourceFiles = parsedGraph.metadata.sourceFiles
@@ -276,6 +454,7 @@ export async function runPipeline(
 				currentGraph,
 				undefined, // Use default client
 				config.llm.model,
+				{ saveMermaid },
 			)
 		run.steps.push(enhanceResult)
 		await saveRunMeta(config.project, runId, run)
@@ -289,20 +468,38 @@ export async function runPipeline(
 	}
 
 	// Run generate step
-	const { result: generateResult } = await runGenerateStep(
+	const { pngBuffer, result: generateResult } = await runGenerateStep(
 		config.project,
 		runId,
 		currentGraph,
+		{ renderPng },
 	)
 	run.steps.push(generateResult)
+	await saveRunMeta(config.project, runId, run)
 
-	// Update status based on step results
 	if (generateResult.status === "failed") {
 		run.status = "failed"
-	} else {
-		run.status = "completed"
+		run.completedAt = new Date().toISOString()
+		await saveRunMeta(config.project, runId, run)
+		return run
 	}
 
+	// Run validate step if enabled and PNG was generated
+	if (validateEnabled && pngBuffer) {
+		const { result: validateResult } = await runValidateStep(
+			config.project,
+			runId,
+			currentGraph,
+			pngBuffer,
+			undefined,
+			config.validation?.model,
+		)
+		run.steps.push(validateResult)
+	}
+
+	// Update status based on step results
+	const hasFailedStep = run.steps.some((s) => s.status === "failed")
+	run.status = hasFailedStep ? "failed" : "completed"
 	run.completedAt = new Date().toISOString()
 
 	// Save final state
@@ -315,7 +512,7 @@ export async function runPipeline(
  * Run a single pipeline step
  */
 export async function runStep(
-	config: PipelineConfig,
+	config: ExtendedPipelineConfig,
 	step: PipelineConfig["steps"] extends (infer T)[] ? T : never,
 ): Promise<StepResult> {
 	const runId = generateRunId()
@@ -383,6 +580,61 @@ export async function runStep(
 				config.project,
 				runId,
 				graphToRender,
+			)
+			return result
+		}
+		case "validate": {
+			// Need to run full pipeline up to generate, then validate
+			const { graph: parsedGraph, result: parseResult } = await runParseStep(
+				config.project,
+				runId,
+			)
+			if (parseResult.status === "failed") {
+				return {
+					step: "validate",
+					status: "failed",
+					error: `Parse step failed: ${parseResult.error}`,
+				}
+			}
+
+			let graphToRender = parsedGraph
+
+			if (config.llm?.enabled) {
+				const { graph: enhancedGraph, result: enhanceResult } =
+					await runEnhanceStep(
+						config.project,
+						runId,
+						parsedGraph,
+						undefined,
+						config.llm.model,
+					)
+				if (enhanceResult.status === "completed") {
+					graphToRender = enhancedGraph
+				}
+			}
+
+			const { pngBuffer, result: generateResult } = await runGenerateStep(
+				config.project,
+				runId,
+				graphToRender,
+				{ renderPng: true },
+			)
+
+			if (generateResult.status === "failed" || !pngBuffer) {
+				return {
+					step: "validate",
+					status: "failed",
+					error: "Generate step failed or PNG not available",
+				}
+			}
+
+			const { result } = await runValidateStep(
+				config.project,
+				runId,
+				graphToRender,
+				pngBuffer,
+				undefined,
+				config.validation?.model,
 			)
 			return result
 		}
