@@ -132,6 +132,38 @@ export async function loadParsedGraph(
 }
 
 /**
+ * Save enhanced graph to run directory
+ */
+export async function saveEnhancedGraph(
+	project: string,
+	runId: string,
+	graph: InfraGraph,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = "02-enhanced.json"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(graph, null, 2))
+	return filename
+}
+
+/**
+ * Load enhanced graph from run directory
+ */
+export async function loadEnhancedGraph(
+	project: string,
+	runId: string,
+): Promise<InfraGraph | null> {
+	const runDir = getRunDir(project, runId)
+	const filepath = join(runDir, "02-enhanced.json")
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as InfraGraph
+	} catch {
+		return null
+	}
+}
+
+/**
  * Save Excalidraw JSON to run directory
  */
 export async function saveExcalidrawFile(

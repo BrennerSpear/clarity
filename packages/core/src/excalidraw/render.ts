@@ -2,7 +2,13 @@
  * Render an InfraGraph to Excalidraw JSON format
  */
 
-import type { InfraGraph, ServiceNode, ServiceType } from "../graph/types"
+import type {
+	InfraGraph,
+	ServiceCategory,
+	ServiceNode,
+	ServiceType,
+} from "../graph/types"
+import type { ResolutionLevel } from "../pipeline/types"
 import {
 	type NodePosition,
 	calculateLayout,
@@ -289,6 +295,7 @@ export interface RenderOptions {
 	nodeHeight?: number
 	horizontalGap?: number
 	verticalGap?: number
+	resolution?: ResolutionLevel
 }
 
 /**
@@ -367,4 +374,331 @@ export function renderToExcalidraw(
  */
 export function excalidrawToJson(file: ExcalidrawFile): string {
 	return JSON.stringify(file, null, 2)
+}
+
+/**
+ * Colors for different service categories
+ */
+const CATEGORY_COLORS: Record<
+	ServiceCategory,
+	{ stroke: string; background: string }
+> = {
+	"data-layer": {
+		stroke: "#1971c2",
+		background: "#a5d8ff",
+	},
+	"application-layer": {
+		stroke: "#0c8599",
+		background: "#99e9f2",
+	},
+	infrastructure: {
+		stroke: "#7950f2",
+		background: "#d0bfff",
+	},
+	monitoring: {
+		stroke: "#2f9e44",
+		background: "#b2f2bb",
+	},
+	security: {
+		stroke: "#e03131",
+		background: "#ffc9c9",
+	},
+}
+
+/**
+ * Get colors for a service category (for grouped views)
+ */
+function getCategoryColors(category?: ServiceCategory): {
+	stroke: string
+	background: string
+} {
+	if (category && CATEGORY_COLORS[category]) {
+		return CATEGORY_COLORS[category]
+	}
+	return {
+		stroke: "#495057",
+		background: "#dee2e6",
+	}
+}
+
+/**
+ * Group nodes by their category
+ */
+function groupNodesByCategory(
+	nodes: ServiceNode[],
+): Map<ServiceCategory | "ungrouped", ServiceNode[]> {
+	const groups = new Map<ServiceCategory | "ungrouped", ServiceNode[]>()
+
+	for (const node of nodes) {
+		const category = node.category ?? "ungrouped"
+		if (!groups.has(category)) {
+			groups.set(category, [])
+		}
+		groups.get(category)?.push(node)
+	}
+
+	return groups
+}
+
+/**
+ * Group nodes by their LLM-assigned group name
+ */
+function groupNodesByGroupName(
+	nodes: ServiceNode[],
+): Map<string, ServiceNode[]> {
+	const groups = new Map<string, ServiceNode[]>()
+
+	for (const node of nodes) {
+		const groupName = node.group ?? "Other"
+		if (!groups.has(groupName)) {
+			groups.set(groupName, [])
+		}
+		groups.get(groupName)?.push(node)
+	}
+
+	return groups
+}
+
+/**
+ * Create a grouped graph for executive view
+ * Consolidates services by category into single nodes
+ */
+function createExecutiveGraph(graph: InfraGraph): InfraGraph {
+	const categoryGroups = groupNodesByCategory(graph.nodes)
+
+	const nodes: ServiceNode[] = []
+	const categoryToNodeId = new Map<string, string>()
+
+	// Create one node per category
+	for (const [category, categoryNodes] of categoryGroups.entries()) {
+		const nodeId = `category-${category}`
+		categoryToNodeId.set(category, nodeId)
+
+		// Determine dominant type in category
+		const typeCounts = new Map<ServiceType, number>()
+		for (const node of categoryNodes) {
+			typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1)
+		}
+		let dominantType: ServiceType = "container"
+		let maxCount = 0
+		for (const [type, count] of typeCounts) {
+			if (count > maxCount) {
+				maxCount = count
+				dominantType = type
+			}
+		}
+
+		const categoryLabel =
+			category === "ungrouped"
+				? "Other Services"
+				: category
+						.split("-")
+						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+						.join(" ")
+
+		nodes.push({
+			id: nodeId,
+			name: `${categoryLabel}\n(${categoryNodes.length} services)`,
+			type: dominantType,
+			category: category === "ungrouped" ? undefined : category,
+			source: { file: "aggregated", format: "docker-compose" },
+		})
+	}
+
+	// Create edges between categories based on original edges
+	const edgeSet = new Set<string>()
+	const edges: InfraGraph["edges"] = []
+
+	for (const edge of graph.edges) {
+		const fromNode = graph.nodes.find((n) => n.id === edge.from)
+		const toNode = graph.nodes.find((n) => n.id === edge.to)
+
+		if (fromNode && toNode) {
+			const fromCategory = fromNode.category ?? "ungrouped"
+			const toCategory = toNode.category ?? "ungrouped"
+
+			// Skip self-edges within category
+			if (fromCategory === toCategory) continue
+
+			const fromId = categoryToNodeId.get(fromCategory)
+			const toId = categoryToNodeId.get(toCategory)
+
+			if (fromId && toId) {
+				const edgeKey = `${fromId}->${toId}`
+				if (!edgeSet.has(edgeKey)) {
+					edgeSet.add(edgeKey)
+					edges.push({
+						from: fromId,
+						to: toId,
+						type: "inferred",
+					})
+				}
+			}
+		}
+	}
+
+	return {
+		nodes,
+		edges,
+		metadata: {
+			...graph.metadata,
+			parserVersion: `${graph.metadata.parserVersion}-executive`,
+		},
+	}
+}
+
+/**
+ * Create a grouped graph showing service groups
+ * Consolidates services by their group name
+ */
+function createGroupsGraph(graph: InfraGraph): InfraGraph {
+	const groupedNodes = groupNodesByGroupName(graph.nodes)
+
+	const nodes: ServiceNode[] = []
+	const groupToNodeId = new Map<string, string>()
+
+	// Create one node per group
+	for (const [groupName, groupNodes] of groupedNodes.entries()) {
+		const nodeId = `group-${groupName.toLowerCase().replace(/\s+/g, "-")}`
+		groupToNodeId.set(groupName, nodeId)
+
+		// Determine dominant type and category in group
+		const typeCounts = new Map<ServiceType, number>()
+		const categoryCounts = new Map<ServiceCategory | undefined, number>()
+
+		for (const node of groupNodes) {
+			typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1)
+			categoryCounts.set(
+				node.category,
+				(categoryCounts.get(node.category) ?? 0) + 1,
+			)
+		}
+
+		let dominantType: ServiceType = "container"
+		let maxTypeCount = 0
+		for (const [type, count] of typeCounts) {
+			if (count > maxTypeCount) {
+				maxTypeCount = count
+				dominantType = type
+			}
+		}
+
+		let dominantCategory: ServiceCategory | undefined
+		let maxCategoryCount = 0
+		for (const [category, count] of categoryCounts) {
+			if (count > maxCategoryCount) {
+				maxCategoryCount = count
+				dominantCategory = category
+			}
+		}
+
+		nodes.push({
+			id: nodeId,
+			name: `${groupName}\n(${groupNodes.length} services)`,
+			type: dominantType,
+			category: dominantCategory,
+			group: groupName,
+			source: { file: "aggregated", format: "docker-compose" },
+		})
+	}
+
+	// Create edges between groups based on original edges
+	const edgeSet = new Set<string>()
+	const edges: InfraGraph["edges"] = []
+
+	for (const edge of graph.edges) {
+		const fromNode = graph.nodes.find((n) => n.id === edge.from)
+		const toNode = graph.nodes.find((n) => n.id === edge.to)
+
+		if (fromNode && toNode) {
+			const fromGroup = fromNode.group ?? "Other"
+			const toGroup = toNode.group ?? "Other"
+
+			// Skip self-edges within group
+			if (fromGroup === toGroup) continue
+
+			const fromId = groupToNodeId.get(fromGroup)
+			const toId = groupToNodeId.get(toGroup)
+
+			if (fromId && toId) {
+				const edgeKey = `${fromId}->${toId}`
+				if (!edgeSet.has(edgeKey)) {
+					edgeSet.add(edgeKey)
+					edges.push({
+						from: fromId,
+						to: toId,
+						type: "inferred",
+					})
+				}
+			}
+		}
+	}
+
+	return {
+		nodes,
+		edges,
+		metadata: {
+			...graph.metadata,
+			parserVersion: `${graph.metadata.parserVersion}-groups`,
+		},
+	}
+}
+
+/**
+ * Render graph at a specific resolution level
+ */
+export function renderAtResolution(
+	graph: InfraGraph,
+	resolution: ResolutionLevel,
+	options?: Omit<RenderOptions, "resolution">,
+): ExcalidrawFile {
+	switch (resolution) {
+		case "executive":
+			// High-level view: one node per category
+			return renderToExcalidraw(createExecutiveGraph(graph), {
+				...options,
+				nodeWidth: 220,
+				nodeHeight: 100,
+			})
+
+		case "groups":
+			// Group view: one node per LLM-assigned group
+			return renderToExcalidraw(createGroupsGraph(graph), {
+				...options,
+				nodeWidth: 200,
+				nodeHeight: 90,
+			})
+
+		case "services":
+			// Full service map (default view)
+			return renderToExcalidraw(graph, options)
+
+		case "detailed":
+			// Detailed view with extra info (same as services for now)
+			return renderToExcalidraw(graph, {
+				...options,
+				nodeWidth: 200,
+				nodeHeight: 100,
+			})
+
+		default:
+			return renderToExcalidraw(graph, options)
+	}
+}
+
+/**
+ * Render graph at all resolution levels
+ */
+export function renderAllResolutions(
+	graph: InfraGraph,
+	resolutions: ResolutionLevel[] = ["executive", "groups", "services"],
+	options?: Omit<RenderOptions, "resolution">,
+): Map<ResolutionLevel, ExcalidrawFile> {
+	const results = new Map<ResolutionLevel, ExcalidrawFile>()
+
+	for (const resolution of resolutions) {
+		results.set(resolution, renderAtResolution(graph, resolution, options))
+	}
+
+	return results
 }

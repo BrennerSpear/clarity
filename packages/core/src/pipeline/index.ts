@@ -1,13 +1,20 @@
+import type Anthropic from "@anthropic-ai/sdk"
 import { renderToExcalidraw } from "../excalidraw/render"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
+import { createClient, parseJsonResponse, sendMessage } from "../llm/client"
+import {
+	type EnhancementResponse,
+	applyEnhancements,
+	buildEnhancePrompt,
+} from "../llm/prompts"
 import { parseDockerCompose } from "../parsers/docker-compose"
 import {
 	ensureRunDir,
 	generateRunId,
 	listSourceFiles,
-	loadParsedGraph,
 	readSourceFile,
+	saveEnhancedGraph,
 	saveExcalidrawFile,
 	saveParsedGraph,
 	saveRunMeta,
@@ -99,6 +106,72 @@ export async function runParseStep(
 }
 
 /**
+ * Enhanced step result with LLM metadata
+ */
+export interface EnhanceStepResult extends StepResult {
+	llmModel?: string
+	tokensUsed?: number
+}
+
+/**
+ * Run the enhance step: use LLM to categorize and group services
+ */
+export async function runEnhanceStep(
+	project: string,
+	runId: string,
+	graph: InfraGraph,
+	client?: Anthropic,
+	model?: string,
+): Promise<{ graph: InfraGraph; result: EnhanceStepResult }> {
+	const startedAt = new Date().toISOString()
+	const startTime = Date.now()
+
+	try {
+		// Create client if not provided
+		const llmClient = client ?? createClient()
+		const llmModel = model ?? "claude-sonnet-4-20250514"
+
+		// Build prompt and send to LLM
+		const prompt = buildEnhancePrompt(graph)
+		const response = await sendMessage(llmClient, prompt, { model: llmModel })
+
+		// Parse response and apply enhancements
+		const enhancements = parseJsonResponse<EnhancementResponse>(response)
+		const enhancedGraph = applyEnhancements(graph, enhancements)
+
+		// Save enhanced graph
+		const outputFile = await saveEnhancedGraph(project, runId, enhancedGraph)
+		const duration = Date.now() - startTime
+
+		return {
+			graph: enhancedGraph,
+			result: {
+				step: "enhance",
+				status: "completed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				outputFile,
+				llmModel,
+			},
+		}
+	} catch (error) {
+		const duration = Date.now() - startTime
+		return {
+			graph, // Return original graph on failure
+			result: {
+				step: "enhance",
+				status: "failed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		}
+	}
+}
+
+/**
  * Run the generate step: convert InfraGraph to Excalidraw JSON
  */
 export async function runGenerateStep(
@@ -169,6 +242,7 @@ export async function runPipeline(
 		config: {
 			llmEnabled: config.llm?.enabled ?? false,
 			validationEnabled: false,
+			resolutionLevels: config.excalidraw?.resolutionLevels,
 		},
 	}
 
@@ -176,12 +250,12 @@ export async function runPipeline(
 	await saveRunMeta(config.project, runId, run)
 
 	// Run parse step
-	const { graph, result: parseResult } = await runParseStep(
+	const { graph: parsedGraph, result: parseResult } = await runParseStep(
 		config.project,
 		runId,
 	)
 	run.steps.push(parseResult)
-	run.sourceFiles = graph.metadata.sourceFiles
+	run.sourceFiles = parsedGraph.metadata.sourceFiles
 
 	if (parseResult.status === "failed") {
 		run.status = "failed"
@@ -190,11 +264,35 @@ export async function runPipeline(
 		return run
 	}
 
+	// Track the current graph (may be enhanced or not)
+	let currentGraph = parsedGraph
+
+	// Run enhance step if LLM is enabled
+	if (config.llm?.enabled) {
+		const { graph: enhancedGraph, result: enhanceResult } =
+			await runEnhanceStep(
+				config.project,
+				runId,
+				currentGraph,
+				undefined, // Use default client
+				config.llm.model,
+			)
+		run.steps.push(enhanceResult)
+		await saveRunMeta(config.project, runId, run)
+
+		if (enhanceResult.status === "failed") {
+			// Continue with unenhanced graph but log warning
+			console.warn("Enhancement failed, continuing with parsed graph")
+		} else {
+			currentGraph = enhancedGraph
+		}
+	}
+
 	// Run generate step
 	const { result: generateResult } = await runGenerateStep(
 		config.project,
 		runId,
-		graph,
+		currentGraph,
 	)
 	run.steps.push(generateResult)
 
@@ -228,9 +326,31 @@ export async function runStep(
 			const { result } = await runParseStep(config.project, runId)
 			return result
 		}
-		case "generate": {
+		case "enhance": {
 			// First need to parse
 			const { graph, result: parseResult } = await runParseStep(
+				config.project,
+				runId,
+			)
+			if (parseResult.status === "failed") {
+				return {
+					step: "enhance",
+					status: "failed",
+					error: `Parse step failed: ${parseResult.error}`,
+				}
+			}
+			const { result } = await runEnhanceStep(
+				config.project,
+				runId,
+				graph,
+				undefined,
+				config.llm?.model,
+			)
+			return result
+		}
+		case "generate": {
+			// First need to parse and optionally enhance
+			const { graph: parsedGraph, result: parseResult } = await runParseStep(
 				config.project,
 				runId,
 			)
@@ -241,7 +361,29 @@ export async function runStep(
 					error: `Parse step failed: ${parseResult.error}`,
 				}
 			}
-			const { result } = await runGenerateStep(config.project, runId, graph)
+
+			let graphToRender = parsedGraph
+
+			// If LLM is enabled, enhance first
+			if (config.llm?.enabled) {
+				const { graph: enhancedGraph, result: enhanceResult } =
+					await runEnhanceStep(
+						config.project,
+						runId,
+						parsedGraph,
+						undefined,
+						config.llm.model,
+					)
+				if (enhanceResult.status === "completed") {
+					graphToRender = enhancedGraph
+				}
+			}
+
+			const { result } = await runGenerateStep(
+				config.project,
+				runId,
+				graphToRender,
+			)
 			return result
 		}
 		default:
