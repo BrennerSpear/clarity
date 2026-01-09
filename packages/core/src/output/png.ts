@@ -232,6 +232,7 @@ function createCanvasHtml(
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
+      // Draw the path (works for both straight and orthogonal arrows)
       ctx.beginPath();
       ctx.moveTo(x + el.points[0][0], y + el.points[0][1]);
 
@@ -240,10 +241,12 @@ function createCanvasHtml(
       }
       ctx.stroke();
 
-      // Draw arrowhead
+      // Draw arrowhead at the end
       if (el.endArrowhead === 'arrow' && el.points.length >= 2) {
         const lastPoint = el.points[el.points.length - 1];
         const prevPoint = el.points[el.points.length - 2];
+
+        // Calculate angle from the last segment
         const angle = Math.atan2(
           lastPoint[1] - prevPoint[1],
           lastPoint[0] - prevPoint[0]
@@ -253,18 +256,20 @@ function createCanvasHtml(
         const endX = x + lastPoint[0];
         const endY = y + lastPoint[1];
 
+        // Draw filled arrowhead for better visibility
         ctx.beginPath();
         ctx.moveTo(endX, endY);
         ctx.lineTo(
           endX - arrowSize * Math.cos(angle - Math.PI / 6),
           endY - arrowSize * Math.sin(angle - Math.PI / 6)
         );
-        ctx.moveTo(endX, endY);
         ctx.lineTo(
           endX - arrowSize * Math.cos(angle + Math.PI / 6),
           endY - arrowSize * Math.sin(angle + Math.PI / 6)
         );
-        ctx.stroke();
+        ctx.closePath();
+        ctx.fillStyle = el.strokeColor || '#868e96';
+        ctx.fill();
       }
     }
 

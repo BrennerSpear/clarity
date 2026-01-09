@@ -318,9 +318,19 @@ export function groupByDependencyPath(
 		minGroupSize?: number
 		/** Don't group these service types */
 		excludeTypes?: ServiceType[]
+		/** Don't group services that have incoming edges (default: true) */
+		excludeWithIncomingEdges?: boolean
 	},
 ): GroupedGraph {
-	const { minGroupSize = 2, excludeTypes = [] } = options ?? {}
+	const { minGroupSize = 2, excludeTypes = [], excludeWithIncomingEdges = true } = options ?? {}
+
+	// Find services that have incoming edges (other services depend on them)
+	const hasIncomingEdge = new Set<string>()
+	if (excludeWithIncomingEdges) {
+		for (const edge of graph.edges) {
+			hasIncomingEdge.add(edge.to)
+		}
+	}
 
 	// Calculate signatures for all services
 	const signatures = new Map<
@@ -336,6 +346,9 @@ export function groupByDependencyPath(
 	for (const node of graph.nodes) {
 		// Skip excluded types
 		if (excludeTypes.includes(node.type)) continue
+
+		// Skip services that have incoming edges (they're important targets)
+		if (hasIncomingEdge.has(node.id)) continue
 
 		const sig = signatures.get(node.id)
 		if (!sig || sig.signature === "") continue // Skip services with no dependencies

@@ -193,6 +193,81 @@ function createTextElement(
 }
 
 /**
+ * Calculate orthogonal (right-angle) path between two nodes
+ */
+function calculateOrthogonalPath(
+	startPos: NodePosition,
+	endPos: NodePosition,
+): { startPoint: { x: number; y: number }; points: [number, number][] } {
+	const startCenter = getNodeCenter(startPos)
+	const endCenter = getNodeCenter(endPos)
+
+	const dx = endCenter.x - startCenter.x
+	const dy = endCenter.y - startCenter.y
+
+	// Determine primary direction based on relative positions
+	const isMainlyVertical = Math.abs(dy) > Math.abs(dx)
+	const goingDown = dy > 0
+	const goingRight = dx > 0
+
+	let startPoint: { x: number; y: number }
+	let endPoint: { x: number; y: number }
+	const points: [number, number][] = [[0, 0]]
+
+	if (isMainlyVertical) {
+		// Vertical routing: exit top/bottom, route horizontally if needed
+		if (goingDown) {
+			// Exit from bottom of start, enter top of end
+			startPoint = { x: startCenter.x, y: startPos.y + startPos.height }
+			endPoint = { x: endCenter.x, y: endPos.y }
+		} else {
+			// Exit from top of start, enter bottom of end
+			startPoint = { x: startCenter.x, y: startPos.y }
+			endPoint = { x: endCenter.x, y: endPos.y + endPos.height }
+		}
+
+		// Calculate midpoint for the horizontal segment
+		const midY = (startPoint.y + endPoint.y) / 2
+
+		if (Math.abs(dx) > 10) {
+			// Need horizontal routing
+			points.push([0, midY - startPoint.y]) // Go vertical to midpoint
+			points.push([endPoint.x - startPoint.x, midY - startPoint.y]) // Go horizontal
+			points.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y]) // Go vertical to end
+		} else {
+			// Straight vertical
+			points.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y])
+		}
+	} else {
+		// Horizontal routing: exit left/right, route vertically if needed
+		if (goingRight) {
+			// Exit from right of start, enter left of end
+			startPoint = { x: startPos.x + startPos.width, y: startCenter.y }
+			endPoint = { x: endPos.x, y: endCenter.y }
+		} else {
+			// Exit from left of start, enter right of end
+			startPoint = { x: startPos.x, y: startCenter.y }
+			endPoint = { x: endPos.x + endPos.width, y: endCenter.y }
+		}
+
+		// Calculate midpoint for the vertical segment
+		const midX = (startPoint.x + endPoint.x) / 2
+
+		if (Math.abs(dy) > 10) {
+			// Need vertical routing
+			points.push([midX - startPoint.x, 0]) // Go horizontal to midpoint
+			points.push([midX - startPoint.x, endPoint.y - startPoint.y]) // Go vertical
+			points.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y]) // Go horizontal to end
+		} else {
+			// Straight horizontal
+			points.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y])
+		}
+	}
+
+	return { startPoint, points }
+}
+
+/**
  * Create an arrow element connecting two nodes
  */
 function createArrowElement(
@@ -202,27 +277,43 @@ function createArrowElement(
 	startId: string,
 	endId: string,
 	color?: string,
+	useOrthogonal = true,
 ): ExcalidrawArrow {
-	const startCenter = getNodeCenter(startPos)
-	const endCenter = getNodeCenter(endPos)
+	let startPoint: { x: number; y: number }
+	let points: [number, number][]
 
-	// Get connection points on node boundaries
-	const startPoint = getConnectionPoint(startPos, endCenter.x, endCenter.y)
-	const endPoint = getConnectionPoint(endPos, startCenter.x, startCenter.y)
+	if (useOrthogonal) {
+		const path = calculateOrthogonalPath(startPos, endPos)
+		startPoint = path.startPoint
+		points = path.points
+	} else {
+		// Original straight-line logic
+		const startCenter = getNodeCenter(startPos)
+		const endCenter = getNodeCenter(endPos)
+		startPoint = getConnectionPoint(startPos, endCenter.x, endCenter.y)
+		const endPoint = getConnectionPoint(endPos, startCenter.x, startCenter.y)
+		points = [
+			[0, 0],
+			[endPoint.x - startPoint.x, endPoint.y - startPoint.y],
+		]
+	}
 
-	// Calculate relative points for the arrow
-	const points: [number, number][] = [
-		[0, 0],
-		[endPoint.x - startPoint.x, endPoint.y - startPoint.y],
-	]
+	// Calculate bounding box for the arrow
+	let minX = 0, maxX = 0, minY = 0, maxY = 0
+	for (const [px, py] of points) {
+		minX = Math.min(minX, px)
+		maxX = Math.max(maxX, px)
+		minY = Math.min(minY, py)
+		maxY = Math.max(maxY, py)
+	}
 
 	return {
 		id,
 		type: "arrow",
 		x: startPoint.x,
 		y: startPoint.y,
-		width: Math.abs(endPoint.x - startPoint.x),
-		height: Math.abs(endPoint.y - startPoint.y),
+		width: maxX - minX,
+		height: maxY - minY,
 		angle: 0,
 		strokeColor: color ?? "#868e96",
 		backgroundColor: "transparent",
