@@ -322,7 +322,11 @@ export function groupByDependencyPath(
 		excludeWithIncomingEdges?: boolean
 	},
 ): GroupedGraph {
-	const { minGroupSize = 2, excludeTypes = [], excludeWithIncomingEdges = true } = options ?? {}
+	const {
+		minGroupSize = 2,
+		excludeTypes = [],
+		excludeWithIncomingEdges = true,
+	} = options ?? {}
 
 	// Find services that have incoming edges (other services depend on them)
 	const hasIncomingEdge = new Set<string>()
@@ -407,9 +411,7 @@ export function groupByDependencyPath(
 
 			const sampleService = group.services[0]
 			const originalEdge = sampleService
-				? graph.edges.find(
-						(e) => e.from === sampleService.id && e.to === depId,
-					)
+				? graph.edges.find((e) => e.from === sampleService.id && e.to === depId)
 				: undefined
 
 			// Use group-aware direction inference

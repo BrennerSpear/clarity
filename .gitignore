@@ -33,3 +33,6 @@ coverage/
 
 # Local claude files
 .claude/*.local.*
+
+# Test data
+test-data/

@@ -26,7 +26,7 @@ import {
 	type SemanticPosition,
 	calculateSemanticLayout,
 } from "./semantic-layout"
-import { createGrid, findOrthogonalPath } from "./pathfinding"
+import { createGrid, findOrthogonalPath, createConnectionTracker, type ConnectionTracker, type Grid } from "./pathfinding"
 import {
 	type ExcalidrawArrow,
 	type ExcalidrawDiamond,
@@ -338,6 +338,28 @@ function calculatePathBounds(points: [number, number][]): {
 }
 
 /**
+ * Get focus value for spreading connections along an edge
+ * focus ranges from -1 to 1, where 0 is center
+ */
+function getConnectionFocus(
+	tracker: ConnectionTracker | undefined,
+	nodeId: string,
+	isStart: boolean,
+): number {
+	if (!tracker) return 0
+
+	const key = `${nodeId}-${isStart ? "start" : "end"}`
+	const count = tracker.counts.get(key) ?? 0
+	tracker.counts.set(key, count + 1)
+
+	// Spread connections with finer increments: 0, -0.25, 0.25, -0.5, 0.5, -0.75, 0.75...
+	if (count === 0) return 0
+	const offset = Math.ceil(count / 2) * 0.25
+	const sign = count % 2 === 0 ? -1 : 1
+	return Math.max(-0.9, Math.min(0.9, offset * sign))
+}
+
+/**
  * Create an arrow element connecting two nodes
  */
 function createArrowElement(
@@ -348,14 +370,25 @@ function createArrowElement(
 	endId: string,
 	color?: string,
 	useOrthogonal = true,
-	grid?: ReturnType<typeof createGrid> | null,
+	_grid?: Grid | null,
+	tracker?: ConnectionTracker,
 ): ExcalidrawArrow {
-	const { startPoint, points } = calculateArrowPath(
-		startPos,
-		endPos,
-		useOrthogonal,
-		grid,
-	)
+	// Calculate connection points based on relative positions
+	const startCenter = getNodeCenter(startPos)
+	const endCenter = getNodeCenter(endPos)
+	const startPoint = getConnectionPoint(startPos, endCenter.x, endCenter.y)
+	const endPoint = getConnectionPoint(endPos, startCenter.x, startCenter.y)
+
+	// Calculate focus values for spreading arrows along edges
+	const startFocus = getConnectionFocus(tracker, startPos.id, true)
+	const endFocus = getConnectionFocus(tracker, endPos.id, false)
+
+	// Simple two-point path - Excalidraw's elbowed mode will route it
+	const points: [number, number][] = [
+		[0, 0],
+		[endPoint.x - startPoint.x, endPoint.y - startPoint.y],
+	]
+
 	const bounds = calculatePathBounds(points)
 
 	return {
@@ -387,17 +420,17 @@ function createArrowElement(
 		points,
 		startBinding: {
 			elementId: startId,
-			focus: 0,
+			focus: startFocus,
 			gap: 1,
 		},
 		endBinding: {
 			elementId: endId,
-			focus: 0,
+			focus: endFocus,
 			gap: 1,
 		},
 		startArrowhead: null,
 		endArrowhead: "arrow",
-		elbowed: useOrthogonal, // Excalidraw will apply elbow routing
+		elbowed: true, // Enable Excalidraw's elbow routing for proper bindings
 	}
 }
 
@@ -688,27 +721,20 @@ export function renderGroupedToExcalidraw(
 		positions = layout.positions
 	}
 
-	// Render individual nodes
-	for (const node of grouped.nodes) {
-		const position = positions.get(node.id)
-		if (position) {
-			elements.push(...renderServiceNode(node, position))
-		}
-	}
+	// Track which arrows connect to each shape (for boundElements)
+	const shapeArrowBindings = new Map<string, string[]>()
 
-	// Render groups
-	for (const group of grouped.groups) {
-		const position = positions.get(group.id)
-		if (position) {
-			elements.push(...renderServiceGroup(group, position))
-		}
-	}
-
-	// Create pathfinding grid if using orthogonal arrows
-	const grid = orthogonalArrows ? createGrid(positions) : null
-
-	// Render edges with direction colors
+	// First pass: determine all arrow connections
 	const processedEdges = new Set<string>()
+	const arrowInfos: Array<{
+		id: string
+		fromId: string
+		toId: string
+		fromPos: NodePosition
+		toPos: NodePosition
+		color?: string
+	}> = []
+
 	for (const edge of grouped.edges) {
 		const edgeKey = `${edge.from}->${edge.to}`
 		if (processedEdges.has(edgeKey)) continue
@@ -719,21 +745,73 @@ export function renderGroupedToExcalidraw(
 
 		if (fromPos && toPos) {
 			const arrowId = `arrow-${edge.from}-${edge.to}`
+			const fromShapeId = `shape-${edge.from}`
+			const toShapeId = `shape-${edge.to}`
+
+			// Track this arrow for both shapes
+			if (!shapeArrowBindings.has(fromShapeId)) {
+				shapeArrowBindings.set(fromShapeId, [])
+			}
+			shapeArrowBindings.get(fromShapeId)!.push(arrowId)
+
+			if (!shapeArrowBindings.has(toShapeId)) {
+				shapeArrowBindings.set(toShapeId, [])
+			}
+			shapeArrowBindings.get(toShapeId)!.push(arrowId)
+
 			const color = showEdgeDirection
 				? getEdgeDirectionColor(edge.direction)
 				: undefined
-			const arrow = createArrowElement(
-				arrowId,
+
+			arrowInfos.push({
+				id: arrowId,
+				fromId: fromShapeId,
+				toId: toShapeId,
 				fromPos,
 				toPos,
-				`shape-${edge.from}`,
-				`shape-${edge.to}`,
 				color,
-				orthogonalArrows,
-				grid,
-			)
-			elements.push(arrow)
+			})
 		}
+	}
+
+	// Render individual nodes (with arrow bindings)
+	for (const node of grouped.nodes) {
+		const position = positions.get(node.id)
+		if (position) {
+			const shapeId = `shape-${node.id}`
+			const arrowIds = shapeArrowBindings.get(shapeId) ?? []
+			elements.push(...renderServiceNodeWithBindings(node, position, arrowIds))
+		}
+	}
+
+	// Render groups (with arrow bindings)
+	for (const group of grouped.groups) {
+		const position = positions.get(group.id)
+		if (position) {
+			const shapeId = `shape-${group.id}`
+			const arrowIds = shapeArrowBindings.get(shapeId) ?? []
+			elements.push(...renderServiceGroupWithBindings(group, position, arrowIds))
+		}
+	}
+
+	// Create connection tracker for spreading arrows
+	const grid = orthogonalArrows ? createGrid(positions) : null
+	const tracker = orthogonalArrows ? createConnectionTracker() : undefined
+
+	// Create arrows
+	for (const info of arrowInfos) {
+		const arrow = createArrowElement(
+			info.id,
+			info.fromPos,
+			info.toPos,
+			info.fromId,
+			info.toId,
+			info.color,
+			orthogonalArrows,
+			grid,
+			tracker,
+		)
+		elements.push(arrow)
 	}
 
 	return {
@@ -747,6 +825,111 @@ export function renderGroupedToExcalidraw(
 		},
 		files: {},
 	}
+}
+
+/**
+ * Render a service node with arrow bindings
+ */
+function renderServiceNodeWithBindings(
+	node: ServiceNode,
+	position: NodePosition,
+	arrowIds: string[],
+): ExcalidrawElement[] {
+	const elements: ExcalidrawElement[] = []
+	const shapeId = `shape-${node.id}`
+	const textId = `text-${node.id}`
+
+	const colors = getServiceColors(node.type)
+	const shapeType = getServiceShape(node.type)
+
+	// Create shape element
+	const shape = createShapeElement(
+		shapeId,
+		shapeType,
+		position.x,
+		position.y,
+		position.width,
+		position.height,
+		colors,
+	)
+
+	// Add bound elements: text + all connected arrows
+	const boundElements: Array<{ id: string; type: "text" | "arrow" }> = [
+		{ id: textId, type: "text" },
+	]
+	for (const arrowId of arrowIds) {
+		boundElements.push({ id: arrowId, type: "arrow" })
+	}
+	shape.boundElements = boundElements
+	elements.push(shape)
+
+	// Create text element (centered in shape)
+	const text = createTextElement(
+		textId,
+		node.name,
+		position.x,
+		position.y,
+		position.width,
+		position.height,
+		shapeId,
+	)
+	elements.push(text)
+
+	return elements
+}
+
+/**
+ * Render a service group with arrow bindings
+ */
+function renderServiceGroupWithBindings(
+	group: ServiceGroup,
+	position: NodePosition,
+	arrowIds: string[],
+): ExcalidrawElement[] {
+	const elements: ExcalidrawElement[] = []
+	const shapeId = `shape-${group.id}`
+	const textId = `text-${group.id}`
+
+	// Groups use a distinct color (purple/violet for grouping)
+	const colors = {
+		stroke: "#7048e8",
+		background: "#e5dbff",
+	}
+
+	// Create shape element (rectangle for groups)
+	const shape = createShapeElement(
+		shapeId,
+		"rectangle",
+		position.x,
+		position.y,
+		position.width,
+		position.height,
+		colors,
+	)
+
+	// Add bound elements: text + all connected arrows
+	const boundElements: Array<{ id: string; type: "text" | "arrow" }> = [
+		{ id: textId, type: "text" },
+	]
+	for (const arrowId of arrowIds) {
+		boundElements.push({ id: arrowId, type: "arrow" })
+	}
+	shape.boundElements = boundElements
+	elements.push(shape)
+
+	// Create text element (centered in shape)
+	const text = createTextElement(
+		textId,
+		group.name,
+		position.x,
+		position.y,
+		position.width,
+		position.height,
+		shapeId,
+	)
+	elements.push(text)
+
+	return elements
 }
 
 /**

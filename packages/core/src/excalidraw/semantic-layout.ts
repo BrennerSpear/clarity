@@ -5,7 +5,12 @@
  * Entry Points → Producers → Queues → Consumers → Databases
  */
 
-import type { DependencyEdge, InfraGraph, ServiceNode, ServiceType } from "../graph/types"
+import type {
+	DependencyEdge,
+	InfraGraph,
+	ServiceNode,
+	ServiceType,
+} from "../graph/types"
 import type { ServiceGroup } from "../graph/grouping"
 import { LAYOUT_CONFIG } from "./types"
 
@@ -13,16 +18,16 @@ import { LAYOUT_CONFIG } from "./types"
  * Service role in the architecture
  */
 export type ServiceRole =
-	| "entry"      // nginx, load balancers
-	| "gateway"    // relay, API gateways
-	| "app"        // web, main application
-	| "producer"   // services that write to queues
-	| "queue"      // kafka, rabbitmq
-	| "consumer"   // services that read from queues
-	| "database"   // postgres, clickhouse, mysql
-	| "cache"      // redis, memcached
-	| "storage"    // s3, seaweedfs
-	| "helper"     // pgbouncer, proxies, sidecars
+	| "entry" // nginx, load balancers
+	| "gateway" // relay, API gateways
+	| "app" // web, main application
+	| "producer" // services that write to queues
+	| "queue" // kafka, rabbitmq
+	| "consumer" // services that read from queues
+	| "database" // postgres, clickhouse, mysql
+	| "cache" // redis, memcached
+	| "storage" // s3, seaweedfs
+	| "helper" // pgbouncer, proxies, sidecars
 
 /**
  * Position info for layout
@@ -43,11 +48,8 @@ export interface SemanticPosition {
 /**
  * Count connections for each node
  */
-function countConnections(
-	nodeId: string,
-	edges: DependencyEdge[],
-): number {
-	return edges.filter(e => e.from === nodeId || e.to === nodeId).length
+function countConnections(nodeId: string, edges: DependencyEdge[]): number {
+	return edges.filter((e) => e.from === nodeId || e.to === nodeId).length
 }
 
 /**
@@ -76,7 +78,11 @@ function calculateNodeSize(
 /**
  * Helper service patterns - services that are proxies/sidecars for other services
  */
-const HELPER_PATTERNS: { pattern: RegExp; parentType: ServiceType; parentPattern?: RegExp }[] = [
+const HELPER_PATTERNS: {
+	pattern: RegExp
+	parentType: ServiceType
+	parentPattern?: RegExp
+}[] = [
 	{ pattern: /pgbouncer/i, parentType: "database", parentPattern: /postgres/i },
 	{ pattern: /taskbroker/i, parentType: "queue", parentPattern: /kafka/i },
 	{ pattern: /uptime-checker/i, parentType: "queue", parentPattern: /kafka/i },
@@ -88,7 +94,10 @@ const HELPER_PATTERNS: { pattern: RegExp; parentType: ServiceType; parentPattern
 /**
  * Detect the role of a service based on its name and type
  */
-export function detectServiceRole(node: ServiceNode, edges: DependencyEdge[]): ServiceRole {
+export function detectServiceRole(
+	node: ServiceNode,
+	edges: DependencyEdge[],
+): ServiceRole {
 	const name = node.name.toLowerCase()
 	const type = node.type
 
@@ -100,43 +109,74 @@ export function detectServiceRole(node: ServiceNode, edges: DependencyEdge[]): S
 	}
 
 	// Entry points
-	if (name.includes("nginx") || name.includes("haproxy") || name.includes("traefik")) {
+	if (
+		name.includes("nginx") ||
+		name.includes("haproxy") ||
+		name.includes("traefik")
+	) {
 		return "entry"
 	}
 
 	// Gateways
-	if (name.includes("relay") || name.includes("gateway") || name.includes("ingress")) {
+	if (
+		name.includes("relay") ||
+		name.includes("gateway") ||
+		name.includes("ingress")
+	) {
 		return "gateway"
 	}
 
 	// Queues
-	if (type === "queue" || name.includes("kafka") || name.includes("rabbitmq") || name.includes("nats")) {
+	if (
+		type === "queue" ||
+		name.includes("kafka") ||
+		name.includes("rabbitmq") ||
+		name.includes("nats")
+	) {
 		return "queue"
 	}
 
 	// Databases
-	if (type === "database" || name.includes("postgres") || name.includes("mysql") ||
-		name.includes("clickhouse") || name.includes("mongo")) {
+	if (
+		type === "database" ||
+		name.includes("postgres") ||
+		name.includes("mysql") ||
+		name.includes("clickhouse") ||
+		name.includes("mongo")
+	) {
 		return "database"
 	}
 
 	// Cache
-	if (type === "cache" || name.includes("redis") || name.includes("memcached")) {
+	if (
+		type === "cache" ||
+		name.includes("redis") ||
+		name.includes("memcached")
+	) {
 		return "cache"
 	}
 
 	// Storage
-	if (type === "storage" || name.includes("seaweed") || name.includes("minio") || name.includes("s3")) {
+	if (
+		type === "storage" ||
+		name.includes("seaweed") ||
+		name.includes("minio") ||
+		name.includes("s3")
+	) {
 		return "storage"
 	}
 
 	// Consumers - check name patterns
-	if (name.includes("consumer") || name.includes("subscriber") || name.includes("worker")) {
+	if (
+		name.includes("consumer") ||
+		name.includes("subscriber") ||
+		name.includes("worker")
+	) {
 		return "consumer"
 	}
 
 	// Check if it's a producer (writes to queue but doesn't have consumer in name)
-	const writesToQueue = edges.some(e => {
+	const writesToQueue = edges.some((e) => {
 		if (e.from !== node.id) return false
 		// Would need to check if target is a queue
 		return false // Simplified for now
@@ -165,20 +205,21 @@ function findHelperParent(
 		if (helper.pattern.test(name)) {
 			// Find a node that matches the parent pattern
 			if (helper.parentPattern) {
-				const parent = allNodes.find(n =>
-					helper.parentPattern!.test(n.name.toLowerCase()) &&
-					n.type === helper.parentType
+				const parent = allNodes.find(
+					(n) =>
+						helper.parentPattern!.test(n.name.toLowerCase()) &&
+						n.type === helper.parentType,
 				)
 				if (parent) return parent.id
 			}
 
 			// Or find by type and edge connection
 			const connectedTo = edges
-				.filter(e => e.from === helperNode.id)
-				.map(e => e.to)
+				.filter((e) => e.from === helperNode.id)
+				.map((e) => e.to)
 
-			const parent = allNodes.find(n =>
-				connectedTo.includes(n.id) && n.type === helper.parentType
+			const parent = allNodes.find(
+				(n) => connectedTo.includes(n.id) && n.type === helper.parentType,
 			)
 			if (parent) return parent.id
 		}
@@ -216,7 +257,7 @@ export function calculateSemanticLayout(
 		helperHeight?: number
 		columnGap?: number
 		rowGap?: number
-	}
+	},
 ): Map<string, SemanticPosition> {
 	const {
 		nodeWidth = 180,
@@ -247,8 +288,8 @@ export function calculateSemanticLayout(
 
 	// Groups are typically consumers
 	for (const group of groups) {
-		const hasConsumers = group.services.some(s =>
-			s.name.toLowerCase().includes("consumer")
+		const hasConsumers = group.services.some((s) =>
+			s.name.toLowerCase().includes("consumer"),
 		)
 		nodeRoles.set(group.id, hasConsumers ? "consumer" : "producer")
 	}
@@ -266,7 +307,12 @@ export function calculateSemanticLayout(
 	}
 
 	// Build list of nodes to position (excluding helpers, they go with parents)
-	const nodesToPosition: { id: string; role: ServiceRole; isGroup: boolean; connections: number }[] = []
+	const nodesToPosition: {
+		id: string
+		role: ServiceRole
+		isGroup: boolean
+		connections: number
+	}[] = []
 
 	for (const node of graph.nodes) {
 		const role = nodeRoles.get(node.id) ?? "producer"
@@ -309,7 +355,12 @@ export function calculateSemanticLayout(
 	const nodeSizes = new Map<string, { width: number; height: number }>()
 	for (const nodes of columns.values()) {
 		for (const node of nodes) {
-			const size = calculateNodeSize(node.connections, nodeWidth, nodeHeight, node.isGroup)
+			const size = calculateNodeSize(
+				node.connections,
+				nodeWidth,
+				nodeHeight,
+				node.isGroup,
+			)
 			nodeSizes.set(node.id, size)
 		}
 	}
@@ -383,14 +434,15 @@ export function calculateSemanticLayout(
 
 		// Count existing helpers for this parent
 		const existingHelpers = [...positions.values()].filter(
-			p => p.parentId === parentId
+			(p) => p.parentId === parentId,
 		).length
 
 		// Position helper above the parent, offset to the left
 		positions.set(helperId, {
 			id: helperId,
 			x: parentPos.x - 40,
-			y: parentPos.y - helperHeight - 15 - existingHelpers * (helperHeight + 10),
+			y:
+				parentPos.y - helperHeight - 15 - existingHelpers * (helperHeight + 10),
 			width: helperWidth,
 			height: helperHeight,
 			role: "helper",

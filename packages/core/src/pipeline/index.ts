@@ -1,5 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk"
-import { renderGroupedToExcalidraw, renderToExcalidraw } from "../excalidraw/render"
+import {
+	renderGroupedToExcalidraw,
+	renderToExcalidraw,
+} from "../excalidraw/render"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
 import { createClient, parseJsonResponse, sendMessage } from "../llm/client"
@@ -26,7 +29,12 @@ import {
 	saveValidationResult,
 	saveValidationSummary,
 } from "./storage"
-import type { PipelineConfig, PipelineRun, ResolutionLevel, StepResult } from "./types"
+import type {
+	PipelineConfig,
+	PipelineRun,
+	ResolutionLevel,
+	StepResult,
+} from "./types"
 import {
 	type ValidationSummary,
 	type VisualValidationResult,
@@ -92,7 +100,12 @@ export async function runParseStep(
 		// Optionally save Mermaid debug output
 		if (options?.saveMermaid !== false) {
 			const mermaid = graphToMermaid(graph)
-			const mermaidFile = await saveMermaidFile(project, runId, mermaid, "01-parsed")
+			const mermaidFile = await saveMermaidFile(
+				project,
+				runId,
+				mermaid,
+				"01-parsed",
+			)
 			outputFiles.push(mermaidFile)
 		}
 
@@ -179,7 +192,12 @@ export async function runEnhanceStep(
 		// Optionally save styled Mermaid output
 		if (options?.saveMermaid !== false) {
 			const mermaid = graphToMermaidStyled(enhancedGraph)
-			const mermaidFile = await saveMermaidFile(project, runId, mermaid, "02-enhanced")
+			const mermaidFile = await saveMermaidFile(
+				project,
+				runId,
+				mermaid,
+				"02-enhanced",
+			)
 			outputFiles.push(mermaidFile)
 		}
 
@@ -229,7 +247,11 @@ export async function runGenerateStep(
 	runId: string,
 	graph: InfraGraph,
 	options?: { renderPng?: boolean; grouped?: boolean },
-): Promise<{ excalidraw: ExcalidrawFile; pngBuffer?: Buffer; result: GenerateStepResult }> {
+): Promise<{
+	excalidraw: ExcalidrawFile
+	pngBuffer?: Buffer
+	result: GenerateStepResult
+}> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
 	const shouldRenderPng = options?.renderPng !== false
@@ -238,7 +260,10 @@ export async function runGenerateStep(
 	try {
 		// Generate Excalidraw JSON (grouped by default for cleaner diagrams)
 		const excalidraw = useGrouped
-			? renderGroupedToExcalidraw(graph, { minGroupSize: 2, showEdgeDirection: true })
+			? renderGroupedToExcalidraw(graph, {
+					minGroupSize: 2,
+					showEdgeDirection: true,
+				})
 			: renderToExcalidraw(graph)
 
 		const outputFiles: string[] = []
@@ -322,7 +347,10 @@ export async function runValidateStep(
 	pngBuffer: Buffer,
 	client?: Anthropic,
 	model?: string,
-): Promise<{ validationResult: VisualValidationResult; result: ValidateStepResult }> {
+): Promise<{
+	validationResult: VisualValidationResult
+	result: ValidateStepResult
+}> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
 
@@ -331,12 +359,22 @@ export async function runValidateStep(
 		const llmModel = model ?? "claude-sonnet-4-20250514"
 
 		// Validate the diagram
-		const validationResult = await validateDiagram(pngBuffer, graph, llmClient, llmModel)
+		const validationResult = await validateDiagram(
+			pngBuffer,
+			graph,
+			llmClient,
+			llmModel,
+		)
 
 		const outputFiles: string[] = []
 
 		// Save validation result
-		const outputFile = await saveValidationResult(project, runId, validationResult, "services")
+		const outputFile = await saveValidationResult(
+			project,
+			runId,
+			validationResult,
+			"services",
+		)
 		outputFiles.push(outputFile)
 
 		// Create and save summary

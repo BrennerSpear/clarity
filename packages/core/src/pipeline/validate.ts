@@ -63,7 +63,9 @@ export function isValidationPassing(result: VisualValidationResult): boolean {
 	)
 
 	return (
-		result.valid && allAboveMinimum && average >= VALIDATION_THRESHOLDS.minimumAverage
+		result.valid &&
+		allAboveMinimum &&
+		average >= VALIDATION_THRESHOLDS.minimumAverage
 	)
 }
 

@@ -35,9 +35,7 @@ function escapeLabel(label: string): string {
 /**
  * Group nodes by category
  */
-function groupByCategory(
-	nodes: ServiceNode[],
-): Record<string, ServiceNode[]> {
+function groupByCategory(nodes: ServiceNode[]): Record<string, ServiceNode[]> {
 	const groups: Record<string, ServiceNode[]> = {}
 
 	for (const node of nodes) {

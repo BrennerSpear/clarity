@@ -1,7 +1,8 @@
 /**
  * A* pathfinding for orthogonal arrow routing
  *
- * Creates a grid, marks obstacles (nodes), and finds paths around them
+ * Creates a grid, marks obstacles (nodes), and finds paths around them.
+ * Tracks existing arrow paths to spread parallel arrows apart.
  */
 
 import type { NodePosition } from "./layout"
@@ -9,18 +10,20 @@ import type { NodePosition } from "./layout"
 /**
  * Grid cell state
  */
-type CellState = "empty" | "obstacle" | "padding"
+type CellState = "empty" | "obstacle" | "padding" | "arrow"
 
 /**
  * Grid for pathfinding
  */
-interface Grid {
+export interface Grid {
 	cells: CellState[][]
 	width: number
 	height: number
 	cellSize: number
 	offsetX: number
 	offsetY: number
+	/** Count of arrows passing through each cell */
+	arrowUsage: Map<string, number>
 }
 
 /**
@@ -33,6 +36,7 @@ interface AStarNode {
 	h: number // Heuristic (estimated cost to end)
 	f: number // Total cost (g + h)
 	parent: AStarNode | null
+	direction: "up" | "down" | "left" | "right" | null
 }
 
 /**
@@ -40,16 +44,26 @@ interface AStarNode {
  */
 export function createGrid(
 	positions: Map<string, NodePosition>,
-	cellSize = 20,
-	padding = 40,
+	cellSize = 8, // Smaller cells for finer resolution
+	padding = 100, // More padding around diagram edges
 ): Grid {
 	if (positions.size === 0) {
-		return { cells: [[]], width: 1, height: 1, cellSize, offsetX: 0, offsetY: 0 }
+		return {
+			cells: [[]],
+			width: 1,
+			height: 1,
+			cellSize,
+			offsetX: 0,
+			offsetY: 0,
+			arrowUsage: new Map(),
+		}
 	}
 
 	// Find bounds
-	let minX = Infinity, minY = Infinity
-	let maxX = -Infinity, maxY = -Infinity
+	let minX = Infinity,
+		minY = Infinity
+	let maxX = -Infinity,
+		maxY = -Infinity
 
 	for (const pos of positions.values()) {
 		minX = Math.min(minX, pos.x - padding)
@@ -73,12 +87,14 @@ export function createGrid(
 
 	// Mark obstacles (nodes) and padding around them
 	for (const pos of positions.values()) {
-		const startX = Math.floor((pos.x - minX) / cellSize)
-		const startY = Math.floor((pos.y - minY) / cellSize)
-		const endX = Math.ceil((pos.x + pos.width - minX) / cellSize)
-		const endY = Math.ceil((pos.y + pos.height - minY) / cellSize)
+		// Add substantial margin around nodes to ensure arrows don't cross them
+		const margin = 10
+		const startX = Math.floor((pos.x - margin - minX) / cellSize)
+		const startY = Math.floor((pos.y - margin - minY) / cellSize)
+		const endX = Math.ceil((pos.x + pos.width + margin - minX) / cellSize)
+		const endY = Math.ceil((pos.y + pos.height + margin - minY) / cellSize)
 
-		// Mark the node itself as obstacle
+		// Mark the node itself as obstacle (completely impassable)
 		for (let y = startY; y <= endY; y++) {
 			for (let x = startX; x <= endX; x++) {
 				if (y >= 0 && y < height && x >= 0 && x < width) {
@@ -87,9 +103,10 @@ export function createGrid(
 			}
 		}
 
-		// Mark padding around the node (1 cell buffer)
-		for (let y = startY - 1; y <= endY + 1; y++) {
-			for (let x = startX - 1; x <= endX + 1; x++) {
+		// Mark larger padding around the node (6-cell buffer for better spacing)
+		const paddingCells = 6
+		for (let y = startY - paddingCells; y <= endY + paddingCells; y++) {
+			for (let x = startX - paddingCells; x <= endX + paddingCells; x++) {
 				if (y >= 0 && y < height && x >= 0 && x < width) {
 					if (cells[y]![x] === "empty") {
 						cells[y]![x] = "padding"
@@ -99,13 +116,17 @@ export function createGrid(
 		}
 	}
 
-	return { cells, width, height, cellSize, offsetX: minX, offsetY: minY }
+	return { cells, width, height, cellSize, offsetX: minX, offsetY: minY, arrowUsage: new Map() }
 }
 
 /**
  * Convert world coordinates to grid coordinates
  */
-function worldToGrid(grid: Grid, x: number, y: number): { gx: number; gy: number } {
+function worldToGrid(
+	grid: Grid,
+	x: number,
+	y: number,
+): { gx: number; gy: number } {
 	return {
 		gx: Math.round((x - grid.offsetX) / grid.cellSize),
 		gy: Math.round((y - grid.offsetY) / grid.cellSize),
@@ -115,7 +136,11 @@ function worldToGrid(grid: Grid, x: number, y: number): { gx: number; gy: number
 /**
  * Convert grid coordinates to world coordinates
  */
-function gridToWorld(grid: Grid, gx: number, gy: number): { x: number; y: number } {
+function gridToWorld(
+	grid: Grid,
+	gx: number,
+	gy: number,
+): { x: number; y: number } {
 	return {
 		x: gx * grid.cellSize + grid.offsetX,
 		y: gy * grid.cellSize + grid.offsetY,
@@ -130,26 +155,43 @@ function heuristic(x1: number, y1: number, x2: number, y2: number): number {
 }
 
 /**
+ * Get direction between two points
+ */
+function getDirection(
+	fromX: number,
+	fromY: number,
+	toX: number,
+	toY: number,
+): "up" | "down" | "left" | "right" {
+	const dx = toX - fromX
+	const dy = toY - fromY
+	if (dy < 0) return "up"
+	if (dy > 0) return "down"
+	if (dx < 0) return "left"
+	return "right"
+}
+
+/**
  * Get neighbors (orthogonal only - up, down, left, right)
  */
-function getNeighbors(grid: Grid, node: AStarNode): { x: number; y: number }[] {
-	const neighbors: { x: number; y: number }[] = []
-	const dirs = [
-		{ dx: 0, dy: -1 }, // up
-		{ dx: 0, dy: 1 },  // down
-		{ dx: -1, dy: 0 }, // left
-		{ dx: 1, dy: 0 },  // right
+function getNeighbors(grid: Grid, node: AStarNode): { x: number; y: number; direction: "up" | "down" | "left" | "right" }[] {
+	const neighbors: { x: number; y: number; direction: "up" | "down" | "left" | "right" }[] = []
+	const dirs: { dx: number; dy: number; dir: "up" | "down" | "left" | "right" }[] = [
+		{ dx: 0, dy: -1, dir: "up" },
+		{ dx: 0, dy: 1, dir: "down" },
+		{ dx: -1, dy: 0, dir: "left" },
+		{ dx: 1, dy: 0, dir: "right" },
 	]
 
-	for (const { dx, dy } of dirs) {
+	for (const { dx, dy, dir } of dirs) {
 		const nx = node.x + dx
 		const ny = node.y + dy
 
 		if (nx >= 0 && nx < grid.width && ny >= 0 && ny < grid.height) {
 			const cell = grid.cells[ny]?.[nx]
-			// Allow empty cells and padding (padding is traversable but less preferred)
-			if (cell === "empty" || cell === "padding") {
-				neighbors.push({ x: nx, y: ny })
+			// Only allow empty, padding, and arrow cells (not obstacles)
+			if (cell !== "obstacle") {
+				neighbors.push({ x: nx, y: ny, direction: dir })
 			}
 		}
 	}
@@ -160,8 +202,14 @@ function getNeighbors(grid: Grid, node: AStarNode): { x: number; y: number }[] {
 /**
  * Check if two points are on the same line (for path simplification)
  */
-function isCollinear(p1: [number, number], p2: [number, number], p3: [number, number]): boolean {
-	return (p1[0] === p2[0] && p2[0] === p3[0]) || (p1[1] === p2[1] && p2[1] === p3[1])
+function isCollinear(
+	p1: [number, number],
+	p2: [number, number],
+	p3: [number, number],
+): boolean {
+	return (
+		(p1[0] === p2[0] && p2[0] === p3[0]) || (p1[1] === p2[1] && p2[1] === p3[1])
+	)
 }
 
 /**
@@ -188,13 +236,17 @@ function simplifyPath(path: [number, number][]): [number, number][] {
 }
 
 /**
- * Find nearest empty cell to a position
+ * Find nearest traversable cell to a position
  */
-function findNearestEmpty(grid: Grid, gx: number, gy: number): { gx: number; gy: number } {
-	// Check if already empty or padding (traversable)
+function findNearestEmpty(
+	grid: Grid,
+	gx: number,
+	gy: number,
+): { gx: number; gy: number } {
+	// Check if already traversable
 	if (gx >= 0 && gx < grid.width && gy >= 0 && gy < grid.height) {
 		const cell = grid.cells[gy]?.[gx]
-		if (cell === "empty" || cell === "padding") {
+		if (cell !== "obstacle") {
 			return { gx, gy }
 		}
 	}
@@ -210,7 +262,7 @@ function findNearestEmpty(grid: Grid, gx: number, gy: number): { gx: number; gy:
 
 				if (nx >= 0 && nx < grid.width && ny >= 0 && ny < grid.height) {
 					const cell = grid.cells[ny]?.[nx]
-					if (cell === "empty" || cell === "padding") {
+					if (cell !== "obstacle") {
 						return { gx: nx, gy: ny }
 					}
 				}
@@ -254,12 +306,13 @@ export function findPath(
 		h: heuristic(start.gx, start.gy, end.gx, end.gy),
 		f: 0,
 		parent: null,
+		direction: null,
 	}
 	startNode.f = startNode.g + startNode.h
 	openSet.push(startNode)
 
 	let iterations = 0
-	const maxIterations = grid.width * grid.height * 2
+	const maxIterations = grid.width * grid.height * 4
 
 	while (openSet.length > 0 && iterations < maxIterations) {
 		iterations++
@@ -290,20 +343,32 @@ export function findPath(
 			const key = `${neighbor.x},${neighbor.y}`
 			if (closedSet.has(key)) continue
 
-			// Calculate cost (padding cells cost more to discourage paths close to nodes)
 			const cell = grid.cells[neighbor.y]?.[neighbor.x]
-			const moveCost = cell === "padding" ? 2 : 1
+
+			// Calculate base movement cost
+			let moveCost = 1
+
+			// Padding cells cost more (discourages paths close to nodes)
+			if (cell === "padding") {
+				moveCost = 3
+			}
+
+			// Arrow cells cost even more (discourages overlapping with existing arrows)
+			if (cell === "arrow") {
+				moveCost = 8
+			}
+
+			// Check arrow usage - heavily penalize cells used by many arrows
+			const usageKey = `${neighbor.x},${neighbor.y}`
+			const usage = grid.arrowUsage.get(usageKey) ?? 0
+			if (usage > 0) {
+				moveCost += usage * 50 // Extremely strong penalty for shared cells
+			}
 
 			// Add turn penalty to encourage straighter paths
 			let turnPenalty = 0
-			if (current.parent) {
-				const prevDx = current.x - current.parent.x
-				const prevDy = current.y - current.parent.y
-				const newDx = neighbor.x - current.x
-				const newDy = neighbor.y - current.y
-				if (prevDx !== newDx || prevDy !== newDy) {
-					turnPenalty = 5 // Penalty for turning
-				}
+			if (current.direction && neighbor.direction !== current.direction) {
+				turnPenalty = 3 // Penalty for turning
 			}
 
 			const g = current.g + moveCost + turnPenalty
@@ -311,7 +376,9 @@ export function findPath(
 			const f = g + h
 
 			// Check if this neighbor is already in open set with better score
-			const existingIndex = openSet.findIndex(n => n.x === neighbor.x && n.y === neighbor.y)
+			const existingIndex = openSet.findIndex(
+				(n) => n.x === neighbor.x && n.y === neighbor.y,
+			)
 			if (existingIndex !== -1) {
 				if (openSet[existingIndex]!.g <= g) continue
 				openSet.splice(existingIndex, 1)
@@ -324,12 +391,64 @@ export function findPath(
 				h,
 				f,
 				parent: current,
+				direction: neighbor.direction,
 			})
 		}
 	}
 
-	// No path found - return straight line as fallback
+	// No path found - return null
 	return null
+}
+
+/**
+ * Mark cells along a path as used by an arrow
+ * This helps spread subsequent arrows apart
+ */
+export function markPathAsUsed(grid: Grid, path: [number, number][]): void {
+	if (path.length < 2) return
+
+	for (let i = 0; i < path.length - 1; i++) {
+		const [x1, y1] = path[i]!
+		const [x2, y2] = path[i + 1]!
+
+		// Mark cells along this segment
+		const start = worldToGrid(grid, x1, y1)
+		const end = worldToGrid(grid, x2, y2)
+
+		const dx = Math.sign(end.gx - start.gx)
+		const dy = Math.sign(end.gy - start.gy)
+
+		let cx = start.gx
+		let cy = start.gy
+
+		// Limit iterations to prevent infinite loops
+		const maxIterations = Math.abs(end.gx - start.gx) + Math.abs(end.gy - start.gy) + 10
+		let iterations = 0
+
+		while (iterations < maxIterations) {
+			iterations++
+			const key = `${cx},${cy}`
+			grid.arrowUsage.set(key, (grid.arrowUsage.get(key) ?? 0) + 1)
+
+			// Mark adjacent cells more strongly to create wider buffer zones
+			// This forces subsequent arrows to route further away
+			for (let adjDist = 1; adjDist <= 5; adjDist++) {
+				const penalty = 2 / adjDist // Stronger penalty for closer cells
+				for (const [adjX, adjY] of [
+					[cx-adjDist, cy], [cx+adjDist, cy],
+					[cx, cy-adjDist], [cx, cy+adjDist]
+				]) {
+					const adjKey = `${adjX},${adjY}`
+					grid.arrowUsage.set(adjKey, (grid.arrowUsage.get(adjKey) ?? 0) + penalty)
+				}
+			}
+
+			if (cx === end.gx && cy === end.gy) break
+
+			if (dx !== 0) cx += dx
+			if (dy !== 0) cy += dy
+		}
+	}
 }
 
 /**
@@ -337,79 +456,175 @@ export function findPath(
  */
 function getEdgePoint(
 	pos: NodePosition,
-	isHorizontal: boolean,
-	isPositive: boolean,
-	isStart: boolean,
+	direction: "top" | "bottom" | "left" | "right",
+	offset = 0,
 ): { x: number; y: number } {
 	const centerX = pos.x + pos.width / 2
 	const centerY = pos.y + pos.height / 2
 
-	if (isHorizontal) {
-		// Start exits toward target, end enters from source
-		const exitRight = isStart ? isPositive : !isPositive
-		return {
-			x: exitRight ? pos.x + pos.width : pos.x,
-			y: centerY,
-		}
-	}
-	// Vertical
-	const exitBottom = isStart ? isPositive : !isPositive
-	return {
-		x: centerX,
-		y: exitBottom ? pos.y + pos.height : pos.y,
+	switch (direction) {
+		case "top":
+			return { x: centerX + offset, y: pos.y }
+		case "bottom":
+			return { x: centerX + offset, y: pos.y + pos.height }
+		case "left":
+			return { x: pos.x, y: centerY + offset }
+		case "right":
+			return { x: pos.x + pos.width, y: centerY + offset }
 	}
 }
 
 /**
- * Find orthogonal path between two nodes
+ * Determine best edge to exit/enter based on relative positions
+ */
+function getBestEdge(
+	from: NodePosition,
+	to: NodePosition,
+	isStart: boolean,
+): "top" | "bottom" | "left" | "right" {
+	const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 }
+	const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 }
+
+	const dx = toCenter.x - fromCenter.x
+	const dy = toCenter.y - fromCenter.y
+
+	const absDx = Math.abs(dx)
+	const absDy = Math.abs(dy)
+
+	if (isStart) {
+		// For start node, exit toward target
+		if (absDx > absDy) {
+			return dx > 0 ? "right" : "left"
+		}
+		return dy > 0 ? "bottom" : "top"
+	}
+	// For end node, enter from source
+	if (absDx > absDy) {
+		return dx > 0 ? "left" : "right"
+	}
+	return dy > 0 ? "top" : "bottom"
+}
+
+/**
+ * Connection point tracker to spread multiple connections on same edge
+ */
+export interface ConnectionTracker {
+	/** Map of nodeId-edge to number of connections */
+	counts: Map<string, number>
+	/** Global arrow index for routing channel assignment */
+	arrowIndex: number
+}
+
+export function createConnectionTracker(): ConnectionTracker {
+	return { counts: new Map(), arrowIndex: 0 }
+}
+
+/**
+ * Get an offset for a connection based on how many already exist
+ */
+function getConnectionOffset(
+	tracker: ConnectionTracker,
+	nodeId: string,
+	edge: "top" | "bottom" | "left" | "right",
+	pos: NodePosition,
+): number {
+	const key = `${nodeId}-${edge}`
+	const count = tracker.counts.get(key) ?? 0
+	tracker.counts.set(key, count + 1)
+
+	// Spread connections along the edge with wider spacing
+	const spacing = 25 // Wide spacing between connections
+	const maxOffset = (edge === "top" || edge === "bottom")
+		? pos.width / 2.2
+		: pos.height / 2.2
+
+	// Alternate sides: 0, -1, 1, -2, 2, ...
+	const offset = count === 0 ? 0 : (Math.ceil(count / 2) * (count % 2 === 0 ? -1 : 1)) * spacing
+	return Math.max(-maxOffset, Math.min(maxOffset, offset))
+}
+
+/**
+ * Find orthogonal path between two nodes using A* with obstacle avoidance
  * Returns: { startPoint, endPoint, path } where path is relative to startPoint
  */
 export function findOrthogonalPath(
 	grid: Grid,
 	fromPos: NodePosition,
 	toPos: NodePosition,
-): { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; path: [number, number][] } {
-	const fromCenter = { x: fromPos.x + fromPos.width / 2, y: fromPos.y + fromPos.height / 2 }
-	const toCenter = { x: toPos.x + toPos.width / 2, y: toPos.y + toPos.height / 2 }
+	tracker?: ConnectionTracker,
+): {
+	startPoint: { x: number; y: number }
+	endPoint: { x: number; y: number }
+	path: [number, number][]
+} {
+	const startEdge = getBestEdge(fromPos, toPos, true)
+	const endEdge = getBestEdge(fromPos, toPos, false)
 
-	const dx = toCenter.x - fromCenter.x
-	const dy = toCenter.y - fromCenter.y
-	const isHorizontal = Math.abs(dx) > Math.abs(dy)
+	// Get offsets for spreading multiple connections on same edge
+	const startOffset = tracker
+		? getConnectionOffset(tracker, fromPos.id, startEdge, fromPos)
+		: 0
+	const endOffset = tracker
+		? getConnectionOffset(tracker, toPos.id, endEdge, toPos)
+		: 0
 
-	const startPoint = getEdgePoint(fromPos, isHorizontal, isHorizontal ? dx > 0 : dy > 0, true)
-	const endPoint = getEdgePoint(toPos, isHorizontal, isHorizontal ? dx > 0 : dy > 0, false)
+	const startPoint = getEdgePoint(fromPos, startEdge, startOffset)
+	const endPoint = getEdgePoint(toPos, endEdge, endOffset)
 
-	// Find path through the grid
-	const gridPath = findPath(grid, startPoint.x, startPoint.y, endPoint.x, endPoint.y)
+	// Increment arrow index for tracking
+	if (tracker) tracker.arrowIndex++
+
+	// Try A* pathfinding
+	const gridPath = findPath(
+		grid,
+		startPoint.x,
+		startPoint.y,
+		endPoint.x,
+		endPoint.y,
+	)
 
 	if (gridPath && gridPath.length > 1) {
-		// Build path that starts exactly at startPoint and ends exactly at endPoint
-		const path: [number, number][] = [[0, 0]]
+		// Mark this path as used for subsequent arrows
+		markPathAsUsed(grid, gridPath)
 
-		// Add intermediate points from grid path (skip first and last which may not be exact)
-		for (let i = 1; i < gridPath.length - 1; i++) {
-			const [px, py] = gridPath[i]!
+		// Convert to relative path
+		const path: [number, number][] = []
+		for (const [px, py] of gridPath) {
 			path.push([px - startPoint.x, py - startPoint.y])
 		}
-
-		// End exactly at the target edge
-		path.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y])
 
 		return { startPoint, endPoint, path }
 	}
 
-	// Fallback: simple orthogonal path (L-shape or straight)
+	// Fallback: create a safe L-shaped path that routes around the edges
+	const dx = endPoint.x - startPoint.x
+	const dy = endPoint.y - startPoint.y
 	const path: [number, number][] = [[0, 0]]
 
-	if (Math.abs(dx) > 10 && Math.abs(dy) > 10) {
-		// L-shape: go horizontal first, then vertical
-		const midX = endPoint.x - startPoint.x
-		path.push([midX, 0])
-		path.push([midX, endPoint.y - startPoint.y])
+	// Route outside the diagram bounds to avoid all obstacles
+	const boundsOffset = 100
+
+	if (startEdge === "left") {
+		path.push([-boundsOffset, 0])
+		path.push([-boundsOffset, dy])
+		path.push([dx, dy])
+	} else if (startEdge === "right") {
+		path.push([boundsOffset, 0])
+		path.push([boundsOffset, dy])
+		path.push([dx, dy])
+	} else if (startEdge === "top") {
+		path.push([0, -boundsOffset])
+		path.push([dx, -boundsOffset])
+		path.push([dx, dy])
 	} else {
-		// Straight line
-		path.push([endPoint.x - startPoint.x, endPoint.y - startPoint.y])
+		path.push([0, boundsOffset])
+		path.push([dx, boundsOffset])
+		path.push([dx, dy])
 	}
+
+	// Mark fallback path
+	const absolutePath: [number, number][] = path.map(([px, py]) => [startPoint.x + px, startPoint.y + py])
+	markPathAsUsed(grid, absolutePath)
 
 	return { startPoint, endPoint, path }
 }
