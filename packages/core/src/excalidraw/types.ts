@@ -183,8 +183,8 @@ export const SERVICE_COLORS = {
 export const SERVICE_SHAPES: Record<string, ExcalidrawElementType> = {
 	database: "ellipse",
 	cache: "ellipse",
+	storage: "ellipse",
 	queue: "diamond",
-	storage: "rectangle",
 	proxy: "rectangle",
 	container: "rectangle",
 	ui: "rectangle",

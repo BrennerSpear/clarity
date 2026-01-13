@@ -9,12 +9,14 @@ import type { ElkEdgeSection, ElkGraph, ElkNode } from "../elk/types"
 import type { InfraGraph, ServiceNode, ServiceType } from "../graph/types"
 import type {
 	ExcalidrawArrow,
+	ExcalidrawDiamond,
 	ExcalidrawElement,
+	ExcalidrawEllipse,
 	ExcalidrawFile,
 	ExcalidrawRectangle,
 	ExcalidrawText,
 } from "./types"
-import { LAYOUT_CONFIG, SERVICE_COLORS } from "./types"
+import { LAYOUT_CONFIG, SERVICE_COLORS, SERVICE_SHAPES } from "./types"
 
 /**
  * Generate a random seed for Excalidraw's hand-drawn style
@@ -39,18 +41,32 @@ function getServiceColors(type: ServiceType): {
 }
 
 /**
- * Create a rectangle element for a service node
+ * Get the shape type for a service type
+ */
+function getShapeType(
+	serviceType: ServiceType,
+): "rectangle" | "ellipse" | "diamond" {
+	const shape = SERVICE_SHAPES[serviceType]
+	if (shape === "ellipse" || shape === "diamond" || shape === "rectangle") {
+		return shape
+	}
+	return "rectangle"
+}
+
+/**
+ * Create a shape element for a service node (rectangle, ellipse, or diamond)
  */
 function createNodeElement(
 	node: ServiceNode,
 	elkNode: ElkNode,
-): ExcalidrawRectangle {
+): ExcalidrawRectangle | ExcalidrawEllipse | ExcalidrawDiamond {
 	const colors = getServiceColors(node.type)
 	const textId = `${node.id}-text`
+	const shapeType = getShapeType(node.type)
 
 	return {
 		id: node.id,
-		type: "rectangle",
+		type: shapeType,
 		x: elkNode.x ?? 0,
 		y: elkNode.y ?? 0,
 		width: elkNode.width ?? 140,
@@ -65,7 +81,7 @@ function createNodeElement(
 		opacity: 100,
 		groupIds: [],
 		frameId: null,
-		roundness: { type: 3 },
+		roundness: shapeType === "rectangle" ? { type: 3 } : null,
 		seed: generateSeed(),
 		version: 1,
 		versionNonce: generateSeed(),
@@ -74,7 +90,7 @@ function createNodeElement(
 		updated: Date.now(),
 		link: null,
 		locked: false,
-	}
+	} as ExcalidrawRectangle | ExcalidrawEllipse | ExcalidrawDiamond
 }
 
 /**

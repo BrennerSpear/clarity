@@ -24,7 +24,7 @@ export type ElkGraph = ElkNode & { id: "root" }
 /**
  * Semantic layer assignment for left-to-right flow
  */
-export type SemanticLayer = "entry" | "gateway" | "application" | "queue" | "data"
+export type SemanticLayer = "entry" | "ui" | "api" | "worker" | "queue" | "data"
 
 /**
  * Layer configuration for ELK partitioning

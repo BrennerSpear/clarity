@@ -43,7 +43,7 @@ describe("ELK layout", () => {
 		// Check layer assignments
 		const layers = summarizeLayers(result.layerAssignments)
 		expect(layers.entry).toEqual(["nginx"])
-		expect(layers.application).toEqual(["web"])
+		expect(layers.ui).toEqual(["web"])
 		expect(layers.data).toEqual(["postgres"])
 
 		// Check graph structure

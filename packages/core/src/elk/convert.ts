@@ -18,10 +18,11 @@ import {
  */
 const LAYER_PARTITIONS: Record<SemanticLayer, number> = {
 	entry: 0, // Proxies, load balancers, external-facing
-	gateway: 1, // API gateways, relay services
-	application: 2, // Application services, workers, consumers
-	queue: 3, // Message queues, brokers
-	data: 4, // Databases, caches, storage
+	ui: 1, // Web frontends, UI services
+	api: 2, // API services, gateways, streaming
+	worker: 3, // Background job processors (sidekiq, celery)
+	queue: 4, // Message queues, brokers
+	data: 5, // Databases, caches, storage
 }
 
 /**
@@ -33,9 +34,10 @@ const DEFAULT_NODE_SIZE = { width: 140, height: 50 }
  * Node dimensions based on service type
  */
 const NODE_SIZES: Record<string, { width: number; height: number }> = {
-	database: { width: 120, height: 60 },
-	cache: { width: 100, height: 50 },
-	queue: { width: 100, height: 50 },
+	database: { width: 160, height: 80 },
+	cache: { width: 140, height: 70 },
+	storage: { width: 160, height: 80 },
+	queue: { width: 120, height: 60 },
 	proxy: { width: 100, height: 50 },
 }
 
@@ -59,23 +61,66 @@ export function getSemanticLayer(node: ServiceNode): SemanticLayer {
 	// Name-based heuristics for common patterns
 	const nameLower = node.name.toLowerCase()
 
-	// Entry points
+	// Entry points (proxies, load balancers)
 	if (
 		nameLower.includes("nginx") ||
 		nameLower.includes("haproxy") ||
 		nameLower.includes("traefik") ||
-		nameLower.includes("ingress")
+		nameLower.includes("ingress") ||
+		nameLower.includes("caddy")
 	) {
 		return "entry"
 	}
 
-	// Gateway/relay services
-	if (nameLower.includes("relay") || nameLower.includes("gateway")) {
-		return "gateway"
+	// UI layer (web frontends, dashboards)
+	if (
+		nameLower === "web" ||
+		nameLower.includes("frontend") ||
+		nameLower.includes("dashboard") ||
+		nameLower.includes("ui") ||
+		nameLower.includes("client") ||
+		nameLower.includes("app")
+	) {
+		return "ui"
 	}
 
-	// Default to application layer
-	return "application"
+	// Worker layer (background job processors)
+	if (
+		nameLower.includes("sidekiq") ||
+		nameLower.includes("celery") ||
+		nameLower.includes("resque") ||
+		nameLower.includes("worker") ||
+		nameLower.includes("job") ||
+		nameLower.includes("consumer") ||
+		nameLower.includes("processor")
+	) {
+		return "worker"
+	}
+
+	// API layer (gateways, APIs, streaming services)
+	if (
+		nameLower.includes("api") ||
+		nameLower.includes("gateway") ||
+		nameLower.includes("relay") ||
+		nameLower.includes("streaming") ||
+		nameLower.includes("graphql") ||
+		nameLower.includes("grpc")
+	) {
+		return "api"
+	}
+
+	// Storage/data services
+	if (
+		nameLower.includes("seaweedfs") ||
+		nameLower.includes("objectstorage") ||
+		nameLower.includes("minio") ||
+		nameLower.includes("s3")
+	) {
+		return "data"
+	}
+
+	// Default to API layer (most services are API/backend services)
+	return "api"
 }
 
 /**
@@ -206,7 +251,7 @@ export function infraGraphToElk(
 
 	// Convert nodes, adding ports where needed
 	const children: ElkNode[] = graph.nodes.map((node) => {
-		const layer = layerAssignments.get(node.id) ?? "application"
+		const layer = layerAssignments.get(node.id) ?? "api"
 		const elkNode = convertNode(node, layer, enablePartitioning)
 
 		// Add ports if this node has cache connections
@@ -268,8 +313,9 @@ export function summarizeLayers(
 ): Record<SemanticLayer, string[]> {
 	const summary: Record<SemanticLayer, string[]> = {
 		entry: [],
-		gateway: [],
-		application: [],
+		ui: [],
+		api: [],
+		worker: [],
 		queue: [],
 		data: [],
 	}

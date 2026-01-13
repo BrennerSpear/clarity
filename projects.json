@@ -17,6 +17,42 @@
 			"name": "Mastodon",
 			"repo": "https://github.com/mastodon/mastodon",
 			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "gitlab",
+			"name": "GitLab",
+			"repo": "https://github.com/sameersbn/docker-gitlab",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "mattermost",
+			"name": "Mattermost",
+			"repo": "https://github.com/mattermost/docker",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "taiga",
+			"name": "Taiga",
+			"repo": "https://github.com/taigaio/taiga-docker",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "nextcloud",
+			"name": "Nextcloud",
+			"repo": "https://github.com/nextcloud/docker",
+			"files": [{ "path": ".examples/docker-compose/insecure/mariadb/apache/docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "outline",
+			"name": "Outline",
+			"repo": "https://github.com/outline/outline",
+			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
+		},
+		{
+			"id": "posthog",
+			"name": "PostHog",
+			"repo": "https://github.com/PostHog/posthog",
+			"files": [{ "path": "docker-compose.hobby.yml", "format": "docker-compose" }]
 		}
 	]
 }

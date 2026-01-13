@@ -78,6 +78,9 @@ function inferServiceType(serviceName: string, image?: string): ServiceType {
 	// Storage
 	if (
 		name.includes("minio") ||
+		name.includes("seaweedfs") ||
+		name.includes("seaweed") ||
+		name.includes("objectstorage") ||
 		name.includes("s3") ||
 		name.includes("gcs") ||
 		name.includes("ceph")
