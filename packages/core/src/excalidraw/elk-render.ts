@@ -176,13 +176,55 @@ function elkSectionToArrowPoints(
 }
 
 /**
+ * Extract node ID from a port ID
+ *
+ * Port IDs have the format: `{nodeId}-{direction}-{index}`
+ * e.g., "web-south-1" → "web", "redis-north-0" → "redis"
+ *
+ * If the ID doesn't match the port pattern, return it as-is (it's already a node ID)
+ */
+function extractNodeId(portOrNodeId: string): string {
+	// Port IDs end with -{direction}-{number}
+	const portPattern = /^(.+)-(north|south|east|west)-\d+$/
+	const match = portOrNodeId.match(portPattern)
+	return match ? match[1]! : portOrNodeId
+}
+
+/**
+ * Calculate fixedPoint for a binding (normalized 0-1 coordinates)
+ *
+ * This tells Excalidraw exactly where on the node's bounding box
+ * the arrow should attach, preserving ELK's computed attachment point.
+ */
+function calculateFixedPoint(
+	connectionPoint: { x: number; y: number },
+	elkNode: ElkNode,
+): [number, number] {
+	const nodeX = elkNode.x ?? 0
+	const nodeY = elkNode.y ?? 0
+	const nodeWidth = elkNode.width ?? 140
+	const nodeHeight = elkNode.height ?? 50
+
+	// Calculate normalized position (0-1) relative to node bounds
+	let normalizedX = (connectionPoint.x - nodeX) / nodeWidth
+	let normalizedY = (connectionPoint.y - nodeY) / nodeHeight
+
+	// Clamp to valid range (sometimes ELK places points slightly outside)
+	normalizedX = Math.max(0, Math.min(1, normalizedX))
+	normalizedY = Math.max(0, Math.min(1, normalizedY))
+
+	return [normalizedX, normalizedY]
+}
+
+/**
  * Create an arrow element from ELK edge data
  */
 function createArrowElement(
 	edgeId: string,
-	sourceId: string,
-	targetId: string,
+	sourcePortOrNodeId: string,
+	targetPortOrNodeId: string,
 	sections: ElkEdgeSection[],
+	elkNodeMap: Map<string, ElkNode>,
 ): ExcalidrawArrow | null {
 	if (!sections || sections.length === 0) {
 		return null
@@ -193,6 +235,22 @@ function createArrowElement(
 	if (!section) return null
 
 	const { startX, startY, points } = elkSectionToArrowPoints(section)
+
+	// Extract actual node IDs (port IDs like "web-south-1" → "web")
+	const sourceNodeId = extractNodeId(sourcePortOrNodeId)
+	const targetNodeId = extractNodeId(targetPortOrNodeId)
+
+	// Calculate fixedPoints to lock attachment positions
+	const sourceNode = elkNodeMap.get(sourceNodeId)
+	const targetNode = elkNodeMap.get(targetNodeId)
+
+	const startFixedPoint = sourceNode
+		? calculateFixedPoint(section.startPoint, sourceNode)
+		: null
+
+	const endFixedPoint = targetNode
+		? calculateFixedPoint(section.endPoint, targetNode)
+		: null
 
 	return {
 		id: edgeId,
@@ -222,16 +280,16 @@ function createArrowElement(
 		locked: false,
 		points,
 		startBinding: {
-			elementId: sourceId,
+			elementId: sourceNodeId,
 			focus: 0,
 			gap: 1,
-			fixedPoint: null,
+			fixedPoint: startFixedPoint,
 		},
 		endBinding: {
-			elementId: targetId,
+			elementId: targetNodeId,
 			focus: 0,
 			gap: 1,
-			fixedPoint: null,
+			fixedPoint: endFixedPoint,
 		},
 		startArrowhead: null,
 		endArrowhead: "arrow",
@@ -279,6 +337,9 @@ export function renderWithElkLayout(
 	// Build lookup map for ELK nodes
 	const elkNodeMap = buildElkNodeMap(elkGraph)
 
+	// Build offset node map (with padding applied) for arrow binding calculations
+	const offsetElkNodeMap = new Map<string, ElkNode>()
+
 	// Create node elements
 	for (const node of graph.nodes) {
 		const elkNode = elkNodeMap.get(node.id)
@@ -293,6 +354,9 @@ export function renderWithElkLayout(
 			x: (elkNode.x ?? 0) + padding,
 			y: (elkNode.y ?? 0) + padding,
 		}
+
+		// Store for arrow binding calculations
+		offsetElkNodeMap.set(node.id, offsetNode)
 
 		elements.push(createNodeElement(node, offsetNode))
 		elements.push(createNodeText(node, offsetNode))
@@ -328,14 +392,19 @@ export function renderWithElkLayout(
 				sourceId,
 				targetId,
 				offsetSections ?? [],
+				offsetElkNodeMap,
 			)
 
 			if (arrow) {
 				elements.push(arrow)
 
 				// Update bound elements on source and target nodes
-				const sourceEl = elements.find((e) => e.id === sourceId)
-				const targetEl = elements.find((e) => e.id === targetId)
+				// Use extracted node IDs (port IDs like "web-south-1" → "web")
+				const sourceNodeId = extractNodeId(sourceId)
+				const targetNodeId = extractNodeId(targetId)
+
+				const sourceEl = elements.find((e) => e.id === sourceNodeId)
+				const targetEl = elements.find((e) => e.id === targetNodeId)
 
 				if (sourceEl && "boundElements" in sourceEl) {
 					sourceEl.boundElements = [

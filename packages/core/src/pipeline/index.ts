@@ -543,7 +543,7 @@ export async function runPipeline(
 	const runId = generateRunId()
 	await ensureRunDir(config.project, runId)
 
-	const saveMermaid = config.mermaid?.enabled !== false
+	const saveMermaid = config.mermaid?.enabled === true
 	const renderPng = config.png?.enabled !== false
 	const validateEnabled = config.validation?.enabled ?? false
 	const layoutEnabled = config.layout?.enabled !== false // Default to enabled
