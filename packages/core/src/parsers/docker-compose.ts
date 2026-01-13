@@ -57,7 +57,9 @@ function inferServiceType(serviceName: string, image?: string): ServiceType {
 	if (
 		name.includes("redis") ||
 		name.includes("memcache") ||
-		name.includes("keydb")
+		name.includes("keydb") ||
+		name.includes("elasticsearch") ||
+		name.includes("opensearch")
 	) {
 		return "cache"
 	}
