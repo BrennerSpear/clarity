@@ -33,13 +33,30 @@ function escapeLabel(label: string): string {
 }
 
 /**
- * Group nodes by category
+ * Derive category from service type for grouping
+ */
+function getCategoryFromType(type: ServiceType): string {
+	switch (type) {
+		case "database":
+		case "cache":
+		case "queue":
+		case "storage":
+			return "data-layer"
+		case "proxy":
+			return "infrastructure"
+		default:
+			return "application-layer"
+	}
+}
+
+/**
+ * Group nodes by computed category (derived from type)
  */
 function groupByCategory(nodes: ServiceNode[]): Record<string, ServiceNode[]> {
 	const groups: Record<string, ServiceNode[]> = {}
 
 	for (const node of nodes) {
-		const category = node.category ?? "ungrouped"
+		const category = getCategoryFromType(node.type)
 		if (!groups[category]) {
 			groups[category] = []
 		}
@@ -53,9 +70,6 @@ function groupByCategory(nodes: ServiceNode[]): Record<string, ServiceNode[]> {
  * Format category name for display
  */
 function formatCategoryName(category: string): string {
-	if (category === "ungrouped") {
-		return "Other"
-	}
 	return category
 		.split("-")
 		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -68,25 +82,20 @@ function formatCategoryName(category: string): string {
 export function graphToMermaid(graph: InfraGraph): string {
 	const lines: string[] = ["flowchart TB"]
 
-	// Group nodes by category if available
+	// Group nodes by computed category
 	const grouped = groupByCategory(graph.nodes)
 
 	for (const [category, nodes] of Object.entries(grouped)) {
-		if (category !== "ungrouped") {
-			const categoryLabel = formatCategoryName(category)
-			lines.push(`  subgraph ${categoryLabel}`)
-		}
+		const categoryLabel = formatCategoryName(category)
+		lines.push(`  subgraph ${categoryLabel}`)
 
 		for (const node of nodes) {
 			const shape = getNodeShape(node.type)
 			const label = escapeLabel(node.name)
-			const indent = category !== "ungrouped" ? "    " : "  "
-			lines.push(`${indent}${node.id}${shape.open}"${label}"${shape.close}`)
+			lines.push(`    ${node.id}${shape.open}"${label}"${shape.close}`)
 		}
 
-		if (category !== "ungrouped") {
-			lines.push("  end")
-		}
+		lines.push("  end")
 	}
 
 	// Add edges
@@ -124,7 +133,7 @@ export function graphToMermaidStyled(graph: InfraGraph): string {
 		lines.push("  classDef queue fill:#d0bfff,stroke:#7950f2")
 		lines.push("  classDef storage fill:#b2f2bb,stroke:#2f9e44")
 		lines.push("  classDef proxy fill:#ffc9c9,stroke:#e03131")
-		lines.push("  classDef application fill:#99e9f2,stroke:#0c8599")
+		lines.push("  classDef ui fill:#99e9f2,stroke:#0c8599")
 		lines.push("")
 		lines.push(...styleLines)
 	}
@@ -147,8 +156,8 @@ function getStyleClass(type: ServiceType): string | null {
 			return "storage"
 		case "proxy":
 			return "proxy"
-		case "application":
-			return "application"
+		case "ui":
+			return "ui"
 		default:
 			return null
 	}

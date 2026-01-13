@@ -19,7 +19,7 @@ async function main() {
 			const runs = await readdir(testDataDir)
 			const latestRun = runs.sort().reverse()[0]
 			if (latestRun) {
-				filePath = join(testDataDir, latestRun, "03-excalidraw.json")
+				filePath = join(testDataDir, latestRun, "diagram.excalidraw")
 				console.log(`Using latest run: ${latestRun}`)
 			}
 		} catch {

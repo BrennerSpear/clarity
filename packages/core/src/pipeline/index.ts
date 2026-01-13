@@ -1,4 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk"
+import { infraGraphToElk, summarizeLayers } from "../elk/convert"
+import { runLayout } from "../elk/layout"
+import type { ElkGraph } from "../elk/types"
+import { renderWithElkLayout } from "../excalidraw/elk-render"
 import {
 	renderGroupedToExcalidraw,
 	renderToExcalidraw,
@@ -20,6 +24,8 @@ import {
 	getPngPath,
 	listSourceFiles,
 	readSourceFile,
+	saveElkInput,
+	saveElkOutput,
 	saveEnhancedGraph,
 	saveExcalidrawFile,
 	saveMermaidFile,
@@ -233,6 +239,80 @@ export async function runEnhanceStep(
 }
 
 /**
+ * Layout step result with ELK output
+ */
+export interface LayoutStepResult extends StepResult {
+	/** Summary of layer assignments */
+	layers?: Record<string, string[]>
+}
+
+/**
+ * Run the layout step: convert InfraGraph to ELK graph and compute positions
+ */
+export async function runLayoutStep(
+	project: string,
+	runId: string,
+	graph: InfraGraph,
+): Promise<{
+	elkGraph: ElkGraph
+	result: LayoutStepResult
+}> {
+	const startedAt = new Date().toISOString()
+	const startTime = Date.now()
+
+	try {
+		// Convert InfraGraph to ELK format with semantic layers
+		const { graph: elkInput, layerAssignments } = infraGraphToElk(graph)
+		const layers = summarizeLayers(layerAssignments)
+
+		const outputFiles: string[] = []
+
+		// Save the ELK input (for debugging in ELK viewer)
+		const inputFile = await saveElkInput(project, runId, elkInput)
+		outputFiles.push(inputFile)
+
+		// Run ELK layout to compute positions
+		const { graph: elkOutput, width, height } = await runLayout(elkInput)
+
+		// Save the ELK output (with positions)
+		const outputFile = await saveElkOutput(project, runId, elkOutput)
+		outputFiles.push(outputFile)
+
+		const duration = Date.now() - startTime
+
+		console.log(`Layout computed: ${width}x${height}`)
+		console.log("Layer assignments:", layers)
+
+		return {
+			elkGraph: elkOutput,
+			result: {
+				step: "layout",
+				status: "completed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				outputFile,
+				outputFiles,
+				layers,
+			},
+		}
+	} catch (error) {
+		const duration = Date.now() - startTime
+		return {
+			elkGraph: { id: "root", children: [], edges: [] },
+			result: {
+				step: "layout",
+				status: "failed",
+				startedAt,
+				completedAt: new Date().toISOString(),
+				duration,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		}
+	}
+}
+
+/**
  * Generate step result with PNG rendering info
  */
 export interface GenerateStepResult extends StepResult {
@@ -246,7 +326,11 @@ export async function runGenerateStep(
 	project: string,
 	runId: string,
 	graph: InfraGraph,
-	options?: { renderPng?: boolean; grouped?: boolean },
+	options?: {
+		renderPng?: boolean
+		grouped?: boolean
+		elkGraph?: ElkGraph
+	},
 ): Promise<{
 	excalidraw: ExcalidrawFile
 	pngBuffer?: Buffer
@@ -258,13 +342,19 @@ export async function runGenerateStep(
 	const useGrouped = options?.grouped !== false // Default to grouped
 
 	try {
-		// Generate Excalidraw JSON (grouped by default for cleaner diagrams)
-		const excalidraw = useGrouped
-			? renderGroupedToExcalidraw(graph, {
-					minGroupSize: 2,
-					showEdgeDirection: true,
-				})
-			: renderToExcalidraw(graph)
+		// Generate Excalidraw JSON
+		// Use ELK layout if provided, otherwise fall back to grouped/basic
+		let excalidraw: ExcalidrawFile
+		if (options?.elkGraph) {
+			excalidraw = renderWithElkLayout(graph, options.elkGraph)
+		} else if (useGrouped) {
+			excalidraw = renderGroupedToExcalidraw(graph, {
+				minGroupSize: 5,
+				showEdgeDirection: true,
+			})
+		} else {
+			excalidraw = renderToExcalidraw(graph)
+		}
 
 		const outputFiles: string[] = []
 
@@ -436,6 +526,10 @@ export interface ExtendedPipelineConfig extends PipelineConfig {
 	png?: {
 		enabled: boolean
 	}
+	/** Run ELK layout step (default: true) */
+	layout?: {
+		enabled: boolean
+	}
 	/** Group services by dependency path (default: true) */
 	grouped?: boolean
 }
@@ -452,6 +546,7 @@ export async function runPipeline(
 	const saveMermaid = config.mermaid?.enabled !== false
 	const renderPng = config.png?.enabled !== false
 	const validateEnabled = config.validation?.enabled ?? false
+	const layoutEnabled = config.layout?.enabled !== false // Default to enabled
 	const useGrouped = config.grouped !== false // Default to grouped
 
 	const run: PipelineRun = {
@@ -511,12 +606,28 @@ export async function runPipeline(
 		}
 	}
 
-	// Run generate step
+	// Run layout step if enabled
+	let elkGraph: ElkGraph | undefined
+	if (layoutEnabled) {
+		const { elkGraph: layoutElkGraph, result: layoutResult } =
+			await runLayoutStep(config.project, runId, currentGraph)
+		run.steps.push(layoutResult)
+		await saveRunMeta(config.project, runId, run)
+
+		if (layoutResult.status === "failed") {
+			// Continue without layout but log warning
+			console.warn("Layout failed, continuing with basic generate")
+		} else {
+			elkGraph = layoutElkGraph
+		}
+	}
+
+	// Run generate step (use ELK positions if available)
 	const { pngBuffer, result: generateResult } = await runGenerateStep(
 		config.project,
 		runId,
 		currentGraph,
-		{ renderPng, grouped: useGrouped },
+		{ renderPng, grouped: useGrouped, elkGraph },
 	)
 	run.steps.push(generateResult)
 	await saveRunMeta(config.project, runId, run)

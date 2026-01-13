@@ -1,8 +1,9 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import type { ElkGraph } from "../elk/types"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
-import type { PipelineRun, ResolutionLevel, StepResult } from "./types"
+import type { PipelineRun, ResolutionLevel } from "./types"
 import type { ValidationSummary, VisualValidationResult } from "./validate"
 
 /**
@@ -165,6 +166,70 @@ export async function loadEnhancedGraph(
 }
 
 /**
+ * Save ELK input graph to run directory (for debugging)
+ */
+export async function saveElkInput(
+	project: string,
+	runId: string,
+	graph: ElkGraph,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = "03-elk-input.json"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(graph, null, 2))
+	return filename
+}
+
+/**
+ * Load ELK input graph from run directory
+ */
+export async function loadElkInput(
+	project: string,
+	runId: string,
+): Promise<ElkGraph | null> {
+	const runDir = getRunDir(project, runId)
+	const filepath = join(runDir, "03-elk-input.json")
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as ElkGraph
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Save ELK output graph to run directory (with positions)
+ */
+export async function saveElkOutput(
+	project: string,
+	runId: string,
+	graph: ElkGraph,
+): Promise<string> {
+	const runDir = await ensureRunDir(project, runId)
+	const filename = "03-elk-output.json"
+	const filepath = join(runDir, filename)
+	await writeFile(filepath, JSON.stringify(graph, null, 2))
+	return filename
+}
+
+/**
+ * Load ELK output graph from run directory
+ */
+export async function loadElkOutput(
+	project: string,
+	runId: string,
+): Promise<ElkGraph | null> {
+	const runDir = getRunDir(project, runId)
+	const filepath = join(runDir, "03-elk-output.json")
+	try {
+		const content = await readFile(filepath, "utf-8")
+		return JSON.parse(content) as ElkGraph
+	} catch {
+		return null
+	}
+}
+
+/**
  * Save Excalidraw JSON to run directory
  */
 export async function saveExcalidrawFile(
@@ -174,9 +239,7 @@ export async function saveExcalidrawFile(
 	suffix?: string,
 ): Promise<string> {
 	const runDir = await ensureRunDir(project, runId)
-	const filename = suffix
-		? `03-excalidraw-${suffix}.json`
-		: "03-excalidraw.json"
+	const filename = suffix ? `diagram-${suffix}.excalidraw` : "diagram.excalidraw"
 	const filepath = join(runDir, filename)
 	await writeFile(filepath, JSON.stringify(excalidraw, null, 2))
 	return filename
@@ -191,9 +254,7 @@ export async function loadExcalidrawFile(
 	suffix?: string,
 ): Promise<ExcalidrawFile | null> {
 	const runDir = getRunDir(project, runId)
-	const filename = suffix
-		? `03-excalidraw-${suffix}.json`
-		: "03-excalidraw.json"
+	const filename = suffix ? `diagram-${suffix}.excalidraw` : "diagram.excalidraw"
 	const filepath = join(runDir, filename)
 	try {
 		const content = await readFile(filepath, "utf-8")
@@ -252,6 +313,7 @@ export async function readSourceFile(
 
 /**
  * Write source file for a project
+ * Supports nested paths like "sentry/Dockerfile" - will create subdirectories as needed
  */
 export async function writeSourceFile(
 	project: string,
@@ -260,6 +322,11 @@ export async function writeSourceFile(
 ): Promise<void> {
 	await ensureProjectDirs(project)
 	const filepath = join(getSourceDir(project), filename)
+	// Create parent directories if filename contains path separators
+	const parentDir = filepath.substring(0, filepath.lastIndexOf("/"))
+	if (parentDir) {
+		await mkdir(parentDir, { recursive: true })
+	}
 	await writeFile(filepath, content)
 }
 

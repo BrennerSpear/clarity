@@ -28,7 +28,7 @@ const createTestGraph = (): InfraGraph => ({
 		{
 			id: "api",
 			name: "api",
-			type: "application",
+			type: "container",
 			image: "myapp/api:latest",
 			ports: [{ internal: 3000, external: 3000 }],
 			environment: {
@@ -107,9 +107,9 @@ describe("buildEnhancePrompt", () => {
 		// Should include format instructions
 		expect(prompt).toContain("json")
 		expect(prompt).toContain("services")
-		expect(prompt).toContain("category")
 		expect(prompt).toContain("description")
 		expect(prompt).toContain("group")
+		expect(prompt).toContain("queueRole")
 	})
 })
 
@@ -120,25 +120,22 @@ describe("applyEnhancements", () => {
 			services: [
 				{
 					id: "postgres",
-					category: "data-layer",
 					description: "Primary PostgreSQL database",
 					group: "Data Stores",
 				},
 				{
 					id: "redis",
-					category: "data-layer",
 					description: "Redis cache for session storage",
 					group: "Data Stores",
 				},
 				{
 					id: "api",
-					category: "application-layer",
 					description: "Main API server",
 					group: "Application",
+					queueRole: "producer",
 				},
 				{
 					id: "nginx",
-					category: "infrastructure",
 					description: "Reverse proxy and load balancer",
 					group: "Infrastructure",
 				},
@@ -154,13 +151,12 @@ describe("applyEnhancements", () => {
 
 		// Check that enhancements were applied
 		const postgresNode = enhanced.nodes.find((n) => n.id === "postgres")
-		expect(postgresNode?.category).toBe("data-layer")
 		expect(postgresNode?.description).toBe("Primary PostgreSQL database")
 		expect(postgresNode?.group).toBe("Data Stores")
 
 		const apiNode = enhanced.nodes.find((n) => n.id === "api")
-		expect(apiNode?.category).toBe("application-layer")
 		expect(apiNode?.group).toBe("Application")
+		expect(apiNode?.queueRole).toBe("producer")
 	})
 
 	test("preserves original properties", () => {
@@ -169,7 +165,6 @@ describe("applyEnhancements", () => {
 			services: [
 				{
 					id: "postgres",
-					category: "data-layer",
 					description: "Database",
 					group: "Data",
 				},
@@ -193,7 +188,6 @@ describe("applyEnhancements", () => {
 			services: [
 				{
 					id: "postgres",
-					category: "data-layer",
 					description: "Database",
 					group: "Data",
 				},
@@ -206,11 +200,12 @@ describe("applyEnhancements", () => {
 
 		// Postgres should be enhanced
 		const postgresNode = enhanced.nodes.find((n) => n.id === "postgres")
-		expect(postgresNode?.category).toBe("data-layer")
+		expect(postgresNode?.description).toBe("Database")
+		expect(postgresNode?.group).toBe("Data")
 
-		// Redis should not be enhanced (no category)
+		// Redis should not be enhanced (no group)
 		const redisNode = enhanced.nodes.find((n) => n.id === "redis")
-		expect(redisNode?.category).toBeUndefined()
+		expect(redisNode?.group).toBeUndefined()
 	})
 
 	test("preserves edges and metadata", () => {

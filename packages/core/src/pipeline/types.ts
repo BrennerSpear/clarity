@@ -2,6 +2,7 @@ export type PipelineStep =
 	| "fetch"
 	| "parse"
 	| "enhance"
+	| "layout"
 	| "generate"
 	| "validate"
 

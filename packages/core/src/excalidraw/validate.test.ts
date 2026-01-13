@@ -273,7 +273,7 @@ describe("renderToExcalidraw output validation", () => {
 			const latestRun = runs.sort().reverse()[0]
 
 			if (latestRun) {
-				const filePath = join(testDataDir, latestRun, "03-excalidraw.json")
+				const filePath = join(testDataDir, latestRun, "diagram.excalidraw")
 				const content = await readFile(filePath, "utf-8")
 				const data = JSON.parse(content)
 

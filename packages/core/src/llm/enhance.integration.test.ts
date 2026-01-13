@@ -29,7 +29,7 @@ const createTestGraph = (): InfraGraph => ({
 		{
 			id: "api",
 			name: "api",
-			type: "application",
+			type: "container",
 			image: "myapp/api:latest",
 			ports: [{ internal: 3000, external: 3000 }],
 			environment: {
@@ -82,18 +82,13 @@ describe("LLM Enhancement Integration", () => {
 		// Verify each service has required fields
 		for (const service of enhancements.services) {
 			expect(service.id).toBeTruthy()
-			expect(service.category).toBeTruthy()
 			expect(service.description).toBeTruthy()
 			expect(service.group).toBeTruthy()
 
-			// Verify category is valid
-			expect([
-				"data-layer",
-				"application-layer",
-				"infrastructure",
-				"monitoring",
-				"security",
-			]).toContain(service.category)
+			// queueRole is optional and only for queue-related services
+			if (service.queueRole) {
+				expect(["producer", "consumer", "both"]).toContain(service.queueRole)
+			}
 		}
 
 		// Verify groups are defined
@@ -105,36 +100,27 @@ describe("LLM Enhancement Integration", () => {
 		const enhancedGraph = applyEnhancements(graph, enhancements)
 
 		// ========================================
-		// QUALITY CHECKS - Verify correct categorizations
-		// These are assertions about known-correct categorizations
-		// that any competent LLM should get right
+		// QUALITY CHECKS - Verify sensible descriptions and groupings
 		// ========================================
 
-		// Databases should ALWAYS be data-layer
+		// Check descriptions are meaningful
 		const postgresNode = enhancedGraph.nodes.find((n) => n.id === "postgres")
-		expect(postgresNode?.category).toBe("data-layer")
 		expect(postgresNode?.description).toBeTruthy()
 		expect(postgresNode?.description?.toLowerCase()).toMatch(
 			/database|postgres|sql|storage/,
 		)
 
-		// Caches should ALWAYS be data-layer
 		const redisNode = enhancedGraph.nodes.find((n) => n.id === "redis")
-		expect(redisNode?.category).toBe("data-layer")
 		expect(redisNode?.description?.toLowerCase()).toMatch(
 			/cache|redis|memory|store/,
 		)
 
-		// Application servers should be application-layer
 		const apiNode = enhancedGraph.nodes.find((n) => n.id === "api")
-		expect(apiNode?.category).toBe("application-layer")
 		expect(apiNode?.description?.toLowerCase()).toMatch(
 			/api|server|application/,
 		)
 
-		// Reverse proxies/load balancers should be infrastructure
 		const nginxNode = enhancedGraph.nodes.find((n) => n.id === "nginx")
-		expect(nginxNode?.category).toBe("infrastructure")
 		expect(nginxNode?.description?.toLowerCase()).toMatch(
 			/proxy|load|balancer|nginx|gateway/,
 		)

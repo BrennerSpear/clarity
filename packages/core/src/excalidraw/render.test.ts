@@ -228,7 +228,7 @@ describe("renderToExcalidraw", () => {
 				{
 					id: "app",
 					name: "api",
-					type: "application",
+					type: "container",
 					source: { file: "test.yml", format: "docker-compose" },
 				},
 			],

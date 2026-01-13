@@ -8,7 +8,6 @@ const createEnhancedGraph = (): InfraGraph => ({
 			id: "postgres",
 			name: "postgres",
 			type: "database",
-			category: "data-layer",
 			group: "Data Stores",
 			source: { file: "docker-compose.yml", format: "docker-compose" },
 		},
@@ -16,23 +15,20 @@ const createEnhancedGraph = (): InfraGraph => ({
 			id: "redis",
 			name: "redis",
 			type: "cache",
-			category: "data-layer",
 			group: "Data Stores",
 			source: { file: "docker-compose.yml", format: "docker-compose" },
 		},
 		{
 			id: "api",
 			name: "api",
-			type: "application",
-			category: "application-layer",
+			type: "container",
 			group: "Application",
 			source: { file: "docker-compose.yml", format: "docker-compose" },
 		},
 		{
 			id: "worker",
 			name: "worker",
-			type: "application",
-			category: "application-layer",
+			type: "container",
 			group: "Application",
 			source: { file: "docker-compose.yml", format: "docker-compose" },
 		},
@@ -40,7 +36,6 @@ const createEnhancedGraph = (): InfraGraph => ({
 			id: "nginx",
 			name: "nginx",
 			type: "proxy",
-			category: "infrastructure",
 			group: "Infrastructure",
 			source: { file: "docker-compose.yml", format: "docker-compose" },
 		},
@@ -213,15 +208,14 @@ describe("edge handling in resolution views", () => {
 	})
 })
 
-describe("handling ungrouped nodes", () => {
-	test("nodes without category go to ungrouped", () => {
+describe("computed category grouping", () => {
+	test("container type nodes go to Application Layer", () => {
 		const graph: InfraGraph = {
 			nodes: [
 				{
 					id: "service1",
 					name: "service1",
 					type: "container",
-					// No category
 					source: { file: "test.yml", format: "docker-compose" },
 				},
 			],
@@ -238,7 +232,7 @@ describe("handling ungrouped nodes", () => {
 
 		const texts = result.elements.filter((e) => e.type === "text")
 		const textContents = texts.map((t) => (t.type === "text" ? t.text : ""))
-		expect(textContents.some((t) => t.includes("Other Services"))).toBe(true)
+		expect(textContents.some((t) => t.includes("Application Layer"))).toBe(true)
 	})
 
 	test("nodes without group go to Other", () => {
@@ -248,8 +242,7 @@ describe("handling ungrouped nodes", () => {
 					id: "service1",
 					name: "service1",
 					type: "container",
-					category: "application-layer",
-					// No group
+					// No group - will go to "Other" in groups view
 					source: { file: "test.yml", format: "docker-compose" },
 				},
 			],

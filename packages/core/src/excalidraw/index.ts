@@ -8,6 +8,7 @@ export * from "./pathfinding"
 
 // Renderer
 export * from "./render"
+export * from "./elk-render"
 
 // Validation
 export * from "./validate"

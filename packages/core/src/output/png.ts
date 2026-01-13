@@ -7,7 +7,7 @@
 
 import type { ExcalidrawFile } from "../excalidraw/types"
 
-export interface RenderOptions {
+export interface PngRenderOptions {
 	width?: number
 	height?: number
 	backgroundColor?: string
@@ -15,7 +15,7 @@ export interface RenderOptions {
 	padding?: number
 }
 
-const DEFAULT_OPTIONS: Required<RenderOptions> = {
+const DEFAULT_OPTIONS: Required<PngRenderOptions> = {
 	width: 1920,
 	height: 1080,
 	backgroundColor: "#ffffff",
@@ -28,7 +28,7 @@ const DEFAULT_OPTIONS: Required<RenderOptions> = {
  */
 export async function renderExcalidrawToPng(
 	excalidraw: ExcalidrawFile,
-	options?: RenderOptions,
+	options?: PngRenderOptions,
 ): Promise<Buffer> {
 	const opts = { ...DEFAULT_OPTIONS, ...options }
 
@@ -100,7 +100,7 @@ export async function renderExcalidrawToPng(
  */
 function createExcalidrawExportHtml(
 	excalidraw: ExcalidrawFile,
-	options: Required<RenderOptions>,
+	options: Required<PngRenderOptions>,
 ): string {
 	const data = JSON.stringify(excalidraw)
 
@@ -220,7 +220,7 @@ function createExcalidrawExportHtml(
 export async function renderExcalidrawToFile(
 	excalidraw: ExcalidrawFile,
 	outputPath: string,
-	options?: RenderOptions,
+	options?: PngRenderOptions,
 ): Promise<void> {
 	const buffer = await renderExcalidrawToPng(excalidraw, options)
 	const { writeFile } = await import("node:fs/promises")

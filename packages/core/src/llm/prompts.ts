@@ -2,16 +2,16 @@
  * LLM prompts for enhancing infrastructure graphs
  */
 
-import type { InfraGraph, ServiceCategory, ServiceNode } from "../graph/types"
+import type { InfraGraph, QueueRole, ServiceNode } from "../graph/types"
 
 /**
  * Service enhancement data returned by the LLM
  */
 export interface ServiceEnhancement {
 	id: string
-	category: ServiceCategory
 	description: string
 	group: string
+	queueRole?: QueueRole
 }
 
 /**
@@ -41,17 +41,9 @@ export function buildEnhancePrompt(graph: InfraGraph): string {
 
 ## Task
 Analyze the following infrastructure services and enhance each with:
-1. A category (for grouping in diagrams)
-2. A brief description (what it does)
-3. A logical group name (for visual grouping)
-
-## Categories
-Choose ONE category per service:
-- "data-layer" - Databases, caches, object storage, message queues
-- "application-layer" - Application servers, APIs, web servers, workers
-- "infrastructure" - Proxies, load balancers, service mesh, DNS
-- "monitoring" - Metrics, logging, tracing, alerting
-- "security" - Authentication, secrets management, firewalls
+1. A brief description (what it does)
+2. A logical group name (for visual grouping)
+3. For services that interact with message queues: their queue role (producer, consumer, or both)
 
 ## Services to Analyze
 
@@ -67,9 +59,9 @@ Return ONLY valid JSON matching this structure:
   "services": [
     {
       "id": "service-id",
-      "category": "data-layer",
       "description": "Brief description of what this service does",
-      "group": "Group Name"
+      "group": "Group Name",
+      "queueRole": "producer"
     }
   ],
   "groups": [
@@ -86,7 +78,8 @@ Return ONLY valid JSON matching this structure:
 - Group related services together (e.g., all databases in "Data Stores")
 - Use clear, non-technical group names suitable for architecture diagrams
 - Infer purpose from service name, image, ports, and environment variables
-- Create 3-5 groups for typical infrastructure (avoid too many or too few)`
+- Create 3-5 groups for typical infrastructure (avoid too many or too few)
+- Only include queueRole for services that produce to or consume from message queues (Kafka, RabbitMQ, etc.)`
 }
 
 /**
@@ -140,9 +133,9 @@ export function applyEnhancements(
 		if (enhancement) {
 			return {
 				...node,
-				category: enhancement.category,
 				description: enhancement.description,
 				group: enhancement.group,
+				queueRole: enhancement.queueRole,
 			}
 		}
 		return node

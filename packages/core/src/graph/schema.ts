@@ -27,7 +27,7 @@ export const ServiceNodeSchema = z.object({
 		"queue",
 		"storage",
 		"proxy",
-		"application",
+		"ui",
 	]),
 	source: SourceInfoSchema,
 	image: z.string().optional(),
@@ -38,17 +38,9 @@ export const ServiceNodeSchema = z.object({
 		.record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
 		.optional(),
 	replicas: z.number().optional(),
-	category: z
-		.enum([
-			"data-layer",
-			"application-layer",
-			"infrastructure",
-			"monitoring",
-			"security",
-		])
-		.optional(),
 	description: z.string().optional(),
 	group: z.string().optional(),
+	queueRole: z.enum(["producer", "consumer", "both"]).optional(),
 })
 
 export const DependencyEdgeSchema = z.object({

@@ -173,7 +173,7 @@ export const SERVICE_COLORS = {
 		stroke: "#495057",
 		background: "#dee2e6",
 	},
-	application: {
+	ui: {
 		stroke: "#0c8599",
 		background: "#99e9f2",
 	},
@@ -187,7 +187,7 @@ export const SERVICE_SHAPES: Record<string, ExcalidrawElementType> = {
 	storage: "rectangle",
 	proxy: "rectangle",
 	container: "rectangle",
-	application: "rectangle",
+	ui: "rectangle",
 } as const
 
 // Default dimensions

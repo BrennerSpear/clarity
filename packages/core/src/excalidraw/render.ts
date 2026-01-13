@@ -11,10 +11,36 @@ import type {
 import { getEdgeDirectionColor, groupByDependencyPath } from "../graph/grouping"
 import type {
 	InfraGraph,
-	ServiceCategory,
 	ServiceNode,
 	ServiceType,
 } from "../graph/types"
+
+/**
+ * Computed category for grouping (derived from serviceType)
+ */
+type ComputedCategory =
+	| "data-layer"
+	| "application-layer"
+	| "infrastructure"
+
+/**
+ * Derive a high-level category from a service type
+ */
+function getCategoryFromType(type: ServiceType): ComputedCategory {
+	switch (type) {
+		case "database":
+		case "cache":
+		case "queue":
+		case "storage":
+			return "data-layer"
+		case "proxy":
+			return "infrastructure"
+		case "ui":
+		case "container":
+		default:
+			return "application-layer"
+	}
+}
 import type { ResolutionLevel } from "../pipeline/types"
 import {
 	type NodePosition,
@@ -633,7 +659,7 @@ export function renderGroupedToExcalidraw(
 	options?: GroupedRenderOptions,
 ): ExcalidrawFile {
 	const {
-		minGroupSize = 2,
+		minGroupSize = 5,
 		showEdgeDirection = true,
 		useSemanticLayout = true,
 		orthogonalArrows = true,
@@ -933,10 +959,10 @@ function renderServiceGroupWithBindings(
 }
 
 /**
- * Colors for different service categories
+ * Colors for computed categories (derived from type)
  */
 const CATEGORY_COLORS: Record<
-	ServiceCategory,
+	ComputedCategory,
 	{ stroke: string; background: string }
 > = {
 	"data-layer": {
@@ -951,42 +977,18 @@ const CATEGORY_COLORS: Record<
 		stroke: "#7950f2",
 		background: "#d0bfff",
 	},
-	monitoring: {
-		stroke: "#2f9e44",
-		background: "#b2f2bb",
-	},
-	security: {
-		stroke: "#e03131",
-		background: "#ffc9c9",
-	},
 }
 
 /**
- * Get colors for a service category (for grouped views)
- */
-function getCategoryColors(category?: ServiceCategory): {
-	stroke: string
-	background: string
-} {
-	if (category && CATEGORY_COLORS[category]) {
-		return CATEGORY_COLORS[category]
-	}
-	return {
-		stroke: "#495057",
-		background: "#dee2e6",
-	}
-}
-
-/**
- * Group nodes by their category
+ * Group nodes by their computed category (derived from type)
  */
 function groupNodesByCategory(
 	nodes: ServiceNode[],
-): Map<ServiceCategory | "ungrouped", ServiceNode[]> {
-	const groups = new Map<ServiceCategory | "ungrouped", ServiceNode[]>()
+): Map<ComputedCategory, ServiceNode[]> {
+	const groups = new Map<ComputedCategory, ServiceNode[]>()
 
 	for (const node of nodes) {
-		const category = node.category ?? "ungrouped"
+		const category = getCategoryFromType(node.type)
 		if (!groups.has(category)) {
 			groups.set(category, [])
 		}
@@ -1017,7 +1019,7 @@ function groupNodesByGroupName(
 
 /**
  * Create a grouped graph for executive view
- * Consolidates services by category into single nodes
+ * Consolidates services by computed category into single nodes
  */
 function createExecutiveGraph(graph: InfraGraph): InfraGraph {
 	const categoryGroups = groupNodesByCategory(graph.nodes)
@@ -1044,19 +1046,15 @@ function createExecutiveGraph(graph: InfraGraph): InfraGraph {
 			}
 		}
 
-		const categoryLabel =
-			category === "ungrouped"
-				? "Other Services"
-				: category
-						.split("-")
-						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-						.join(" ")
+		const categoryLabel = category
+			.split("-")
+			.map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+			.join(" ")
 
 		nodes.push({
 			id: nodeId,
 			name: `${categoryLabel}\n(${categoryNodes.length} services)`,
 			type: dominantType,
-			category: category === "ungrouped" ? undefined : category,
 			source: { file: "aggregated", format: "docker-compose" },
 		})
 	}
@@ -1070,8 +1068,8 @@ function createExecutiveGraph(graph: InfraGraph): InfraGraph {
 		const toNode = graph.nodes.find((n) => n.id === edge.to)
 
 		if (fromNode && toNode) {
-			const fromCategory = fromNode.category ?? "ungrouped"
-			const toCategory = toNode.category ?? "ungrouped"
+			const fromCategory = getCategoryFromType(fromNode.type)
+			const toCategory = getCategoryFromType(toNode.type)
 
 			// Skip self-edges within category
 			if (fromCategory === toCategory) continue
@@ -1118,16 +1116,11 @@ function createGroupsGraph(graph: InfraGraph): InfraGraph {
 		const nodeId = `group-${groupName.toLowerCase().replace(/\s+/g, "-")}`
 		groupToNodeId.set(groupName, nodeId)
 
-		// Determine dominant type and category in group
+		// Determine dominant type in group
 		const typeCounts = new Map<ServiceType, number>()
-		const categoryCounts = new Map<ServiceCategory | undefined, number>()
 
 		for (const node of groupNodes) {
 			typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1)
-			categoryCounts.set(
-				node.category,
-				(categoryCounts.get(node.category) ?? 0) + 1,
-			)
 		}
 
 		let dominantType: ServiceType = "container"
@@ -1139,20 +1132,10 @@ function createGroupsGraph(graph: InfraGraph): InfraGraph {
 			}
 		}
 
-		let dominantCategory: ServiceCategory | undefined
-		let maxCategoryCount = 0
-		for (const [category, count] of categoryCounts) {
-			if (count > maxCategoryCount) {
-				maxCategoryCount = count
-				dominantCategory = category
-			}
-		}
-
 		nodes.push({
 			id: nodeId,
 			name: `${groupName}\n(${groupNodes.length} services)`,
 			type: dominantType,
-			category: dominantCategory,
 			group: groupName,
 			source: { file: "aggregated", format: "docker-compose" },
 		})

@@ -5,14 +5,9 @@ export type ServiceType =
 	| "queue"
 	| "storage"
 	| "proxy"
-	| "application"
+	| "ui"
 
-export type ServiceCategory =
-	| "data-layer"
-	| "application-layer"
-	| "infrastructure"
-	| "monitoring"
-	| "security"
+export type QueueRole = "producer" | "consumer" | "both"
 
 export type DependencyType =
 	| "depends_on"
@@ -54,9 +49,9 @@ export interface ServiceNode {
 	replicas?: number
 
 	// LLM-enhanced (Phase 3)
-	category?: ServiceCategory
 	description?: string
 	group?: string
+	queueRole?: QueueRole
 }
 
 export interface DependencyEdge {
