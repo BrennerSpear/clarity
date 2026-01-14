@@ -9,6 +9,7 @@ export interface HelmComponent {
 const SKIP_KEYS = new Set([
 	"global",
 	"image",
+	"init",
 	"service",
 	"resources",
 	"persistence",
