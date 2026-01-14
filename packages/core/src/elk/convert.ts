@@ -100,6 +100,8 @@ export function getSemanticLayer(node: ServiceNode): SemanticLayer {
 	switch (node.type) {
 		case "proxy":
 			return "entry"
+		case "ui":
+			return "ui"
 		case "database":
 		case "storage":
 			return "data"
