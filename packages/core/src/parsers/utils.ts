@@ -17,7 +17,8 @@ export function inferServiceType(
 		name.includes("mongo") ||
 		name.includes("clickhouse") ||
 		name.includes("cassandra") ||
-		name.includes("cockroach")
+		name.includes("cockroach") ||
+		name.includes("schema")
 	) {
 		return "database"
 	}
@@ -66,6 +67,20 @@ export function inferServiceType(
 		name.includes("caddy")
 	) {
 		return "proxy"
+	}
+
+	// UI/frontends
+	if (
+		(name.includes("web") ||
+			name.includes("frontend") ||
+			name.includes("ui") ||
+			name.includes("console") ||
+			name.includes("dashboard") ||
+			name.includes("portal")) &&
+		!name.includes("grafana") &&
+		!name.includes("kibana")
+	) {
+		return "ui"
 	}
 
 	// Default to container

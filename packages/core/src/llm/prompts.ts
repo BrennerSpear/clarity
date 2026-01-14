@@ -78,6 +78,7 @@ Return ONLY valid JSON matching this structure:
 - Group related services together (e.g., all databases in "Data Stores")
 - Use clear, non-technical group names suitable for architecture diagrams
 - Infer purpose from service name, image, ports, and environment variables
+- Check every service name for role hints (e.g., web/ui for frontends, schema/migrations for data tasks)
 - Create 3-5 groups for typical infrastructure (avoid too many or too few)
 - Only include queueRole for services that produce to or consume from message queues (Kafka, RabbitMQ, etc.)`
 }
