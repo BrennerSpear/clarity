@@ -2,7 +2,7 @@
 
 ## Overview
 
-TypeScript monorepo with shared pipeline core, CLI interface, and lightweight web UI for viewing intermediate outputs.
+TypeScript monorepo with shared pipeline core and CLI interface. Generates Excalidraw architecture diagrams from Infrastructure-as-Code files.
 
 ---
 
@@ -13,73 +13,55 @@ clarity/
 ├── package.json              # Workspace root (with "workspaces" field)
 ├── bunfig.toml               # Bun configuration
 ├── turbo.json                # Build orchestration
-├── biome.jsonc
+├── biome.jsonc               # Linting and formatting
 │
 ├── packages/
 │   ├── core/                 # Pipeline logic (shared)
 │   │   ├── src/
 │   │   │   ├── index.ts
 │   │   │   ├── pipeline/
-│   │   │   │   ├── index.ts
-│   │   │   │   ├── fetch.ts        # Download IaC files from repos
-│   │   │   │   ├── parse.ts        # Parse to intermediate graph
-│   │   │   │   ├── enhance.ts      # LLM categorization/grouping
-│   │   │   │   ├── generate.ts     # Excalidraw JSON output
-│   │   │   │   └── validate.ts     # Visual validation via Claude Vision
+│   │   │   │   ├── index.ts      # Pipeline orchestration
+│   │   │   │   ├── storage.ts    # Run storage utilities
+│   │   │   │   └── types.ts      # Pipeline config and run types
 │   │   │   ├── parsers/
 │   │   │   │   ├── index.ts
-│   │   │   │   ├── docker-compose.ts
-│   │   │   │   ├── helm.ts
-│   │   │   │   ├── terraform.ts
-│   │   │   │   └── ansible.ts
+│   │   │   │   └── docker-compose.ts
 │   │   │   ├── graph/
-│   │   │   │   ├── types.ts        # Intermediate representation types
-│   │   │   │   ├── schema.ts       # Zod validation schemas
-│   │   │   │   └── builder.ts
+│   │   │   │   ├── types.ts      # Intermediate representation types
+│   │   │   │   ├── schema.ts     # Zod validation schemas
+│   │   │   │   ├── builder.ts    # Fluent graph builder
+│   │   │   │   └── grouping.ts   # Service grouping logic
+│   │   │   ├── elk/
+│   │   │   │   ├── types.ts      # ELK graph types
+│   │   │   │   ├── convert.ts    # InfraGraph to ELK conversion
+│   │   │   │   ├── layout.ts     # ELK layout execution
+│   │   │   │   └── elk-layout-runner.cjs  # CJS subprocess runner
 │   │   │   ├── excalidraw/
-│   │   │   │   ├── types.ts        # Excalidraw JSON schema types
-│   │   │   │   ├── layout.ts       # Auto-layout algorithm
-│   │   │   │   └── render.ts       # Generate Excalidraw JSON
+│   │   │   │   ├── types.ts      # Excalidraw JSON schema types
+│   │   │   │   ├── render.ts     # Basic and grouped rendering
+│   │   │   │   ├── elk-render.ts # Primary ELK-based renderer
+│   │   │   │   ├── layout.ts     # Fallback layout algorithm
+│   │   │   │   ├── semantic-layout.ts  # Role-based positioning
+│   │   │   │   └── pathfinding.ts      # Arrow routing utilities
 │   │   │   ├── output/
-│   │   │   │   ├── mermaid.ts      # Optional Mermaid debug output
-│   │   │   │   └── png.ts          # Puppeteer PNG rendering
+│   │   │   │   ├── mermaid.ts    # Mermaid debug output
+│   │   │   │   └── png.ts        # Puppeteer PNG rendering
 │   │   │   └── llm/
-│   │   │       ├── client.ts       # Claude API client
-│   │   │       └── prompts.ts      # Enhancement prompts
+│   │   │       ├── client.ts     # Claude API client
+│   │   │       └── prompts.ts    # Enhancement prompts
 │   │   ├── package.json
 │   │   └── tsconfig.json
 │   │
-│   ├── cli/                  # Command-line interface
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── commands/
-│   │   │   │   ├── fetch.ts
-│   │   │   │   ├── run.ts
-│   │   │   │   ├── list.ts
-│   │   │   │   └── inspect.ts
-│   │   │   └── utils/
-│   │   │       └── output.ts
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   └── web/                  # Lightweight viewer UI
+│   └── cli/                  # Command-line interface
 │       ├── src/
-│       │   ├── app/
-│       │   │   ├── page.tsx              # Project list
-│       │   │   ├── [project]/
-│       │   │   │   ├── page.tsx          # Run list for project
-│       │   │   │   └── [runId]/
-│       │   │   │       └── page.tsx      # Pipeline step viewer
-│       │   │   └── api/
-│       │   │       ├── projects/route.ts
-│       │   │       ├── runs/route.ts
-│       │   │       └── pipeline/route.ts # Trigger pipeline runs
-│       │   └── components/
-│       │       ├── StepViewer.tsx
-│       │       ├── GraphPreview.tsx
-│       │       ├── ExcalidrawPreview.tsx
-│       │       ├── ValidationResults.tsx
-│       │       └── DiffView.tsx
+│       │   ├── index.ts
+│       │   ├── commands/
+│       │   │   ├── fetch.ts
+│       │   │   ├── run.ts
+│       │   │   ├── list.ts
+│       │   │   └── inspect.ts
+│       │   └── utils/
+│       │       └── output.ts
 │       ├── package.json
 │       └── tsconfig.json
 │
@@ -91,9 +73,15 @@ clarity/
 │   │       └── 2024-01-08-143022/
 │   │           ├── meta.json
 │   │           ├── 01-parsed.json
+│   │           ├── 01-parsed.mermaid
 │   │           ├── 02-enhanced.json
-│   │           ├── 03-excalidraw.json
-│   │           └── 03-excalidraw.png   # Optional rendered preview
+│   │           ├── 02-enhanced.mermaid
+│   │           ├── 03-elk-input.json
+│   │           ├── 03-elk-output.json
+│   │           ├── diagram.excalidraw
+│   │           ├── diagram.png
+│   │           ├── 04-validation-services.json
+│   │           └── 04-validation-summary.json
 │   ├── temporal/
 │   ├── mastodon/
 │   └── gitlab/
@@ -114,10 +102,41 @@ clarity/
 ```typescript
 // packages/core/src/graph/types.ts
 
-export interface InfraGraph {
-  nodes: ServiceNode[]
-  edges: DependencyEdge[]
-  metadata: GraphMetadata
+export type ServiceType =
+  | "container"
+  | "database"
+  | "cache"
+  | "queue"
+  | "storage"
+  | "proxy"
+  | "ui"
+
+export type QueueRole = "producer" | "consumer" | "both"
+
+export type DependencyType =
+  | "depends_on"
+  | "network"
+  | "volume"
+  | "link"
+  | "inferred"
+
+export type SourceFormat = "docker-compose" | "helm" | "terraform" | "ansible"
+
+export interface PortMapping {
+  internal: number
+  external?: number
+}
+
+export interface VolumeMount {
+  source: string
+  target: string
+  type?: "volume" | "bind" | "tmpfs"
+}
+
+export interface SourceInfo {
+  file: string
+  format: SourceFormat
+  line?: number
 }
 
 export interface ServiceNode {
@@ -130,30 +149,14 @@ export interface ServiceNode {
   image?: string
   ports?: PortMapping[]
   volumes?: VolumeMount[]
-  environment?: Record<string, string>
+  environment?: Record<string, string | number | boolean | null>
   replicas?: number
 
   // LLM-enhanced
-  category?: ServiceCategory
   description?: string
   group?: string
+  queueRole?: QueueRole
 }
-
-export type ServiceType =
-  | "container"
-  | "database"
-  | "cache"
-  | "queue"
-  | "storage"
-  | "proxy"
-  | "application"
-
-export type ServiceCategory =
-  | "data-layer"
-  | "application-layer"
-  | "infrastructure"
-  | "monitoring"
-  | "security"
 
 export interface DependencyEdge {
   from: string
@@ -163,24 +166,17 @@ export interface DependencyEdge {
   protocol?: string
 }
 
-export type DependencyType =
-  | "depends_on"
-  | "network"
-  | "volume"
-  | "link"
-  | "inferred"
-
-export interface SourceInfo {
-  file: string
-  format: "docker-compose" | "helm" | "terraform" | "ansible"
-  line?: number
-}
-
 export interface GraphMetadata {
   project: string
   parsedAt: string
   sourceFiles: string[]
   parserVersion: string
+}
+
+export interface InfraGraph {
+  nodes: ServiceNode[]
+  edges: DependencyEdge[]
+  metadata: GraphMetadata
 }
 ```
 
@@ -194,7 +190,7 @@ import { z } from "zod"
 export const ServiceNodeSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  type: z.enum(["container", "database", "cache", "queue", "storage", "proxy", "application"]),
+  type: z.enum(["container", "database", "cache", "queue", "storage", "proxy", "ui"]),
   source: z.object({
     file: z.string(),
     format: z.enum(["docker-compose", "helm", "terraform", "ansible"]),
@@ -210,11 +206,11 @@ export const ServiceNodeSchema = z.object({
     target: z.string(),
     type: z.enum(["volume", "bind", "tmpfs"]).optional(),
   })).optional(),
-  environment: z.record(z.string()).optional(),
+  environment: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   replicas: z.number().optional(),
-  category: z.enum(["data-layer", "application-layer", "infrastructure", "monitoring", "security"]).optional(),
   description: z.string().optional(),
   group: z.string().optional(),
+  queueRole: z.enum(["producer", "consumer", "both"]).optional(),
 })
 
 export const DependencyEdgeSchema = z.object({
@@ -254,48 +250,153 @@ export type DependencyEdge = z.infer<typeof DependencyEdgeSchema>
 export type InfraGraph = z.infer<typeof InfraGraphSchema>
 ```
 
+### ELK Layout Module
+
+The ELK module handles automatic diagram layout using the ELK.js (Eclipse Layout Kernel) library.
+
+```typescript
+// packages/core/src/elk/types.ts
+
+export type SemanticLayer = "entry" | "ui" | "api" | "worker" | "queue" | "data"
+
+export interface ElkNode {
+  id: string
+  width?: number
+  height?: number
+  x?: number
+  y?: number
+  labels?: ElkLabel[]
+  ports?: ElkPort[]
+  layoutOptions?: Record<string, string>
+  children?: ElkNode[]
+}
+
+export interface ElkEdge {
+  id: string
+  sources: string[]
+  targets: string[]
+  sections?: ElkEdgeSection[]
+}
+
+export interface ElkGraph {
+  id: string
+  layoutOptions?: Record<string, string>
+  children: ElkNode[]
+  edges: ElkEdge[]
+}
+
+// Layout option presets
+export const ELK_LAYOUT_OPTIONS = {
+  standard: {
+    "elk.algorithm": "layered",
+    "elk.direction": "RIGHT",
+    "elk.spacing.nodeNode": "50",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+  },
+  semantic: {
+    "elk.algorithm": "layered",
+    "elk.direction": "RIGHT",
+    "elk.partitioning.activate": "true",
+    "elk.spacing.nodeNode": "50",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+    "elk.edgeRouting": "ORTHOGONAL",
+  },
+}
+```
+
+```typescript
+// packages/core/src/elk/convert.ts
+
+/**
+ * Semantic layer partitions (left to right)
+ */
+const LAYER_PARTITIONS: Record<SemanticLayer, number> = {
+  entry: 0,   // Proxies, load balancers, external-facing
+  ui: 1,      // Web frontends, UI services
+  api: 2,     // API services, gateways, streaming
+  worker: 3,  // Background job processors (sidekiq, celery)
+  queue: 4,   // Message queues, brokers
+  data: 5,    // Databases, caches, storage
+}
+
+/**
+ * Determine the semantic layer for a service based on its type and name
+ */
+export function getSemanticLayer(node: ServiceNode): SemanticLayer {
+  // Type-based rules (highest priority)
+  switch (node.type) {
+    case "proxy": return "entry"
+    case "database":
+    case "storage":
+    case "cache": return "data"
+    case "queue": return "queue"
+  }
+
+  // Name-based heuristics for common patterns
+  const nameLower = node.name.toLowerCase()
+
+  if (nameLower.includes("nginx") || nameLower.includes("traefik")) return "entry"
+  if (nameLower === "web" || nameLower.includes("frontend")) return "ui"
+  if (nameLower.includes("worker") || nameLower.includes("sidekiq")) return "worker"
+  if (nameLower.includes("api") || nameLower.includes("gateway")) return "api"
+
+  return "api"  // Default to API layer
+}
+
+/**
+ * Convert InfraGraph to ELK format with semantic layering
+ */
+export function infraGraphToElk(
+  graph: InfraGraph,
+  options?: { semanticLayers?: boolean }
+): ElkConversionResult
+```
+
+The ELK layout is executed via a CJS subprocess (`elk-layout-runner.cjs`) for compatibility with ELK.js's CommonJS module format.
+
+### Excalidraw Rendering
+
+```typescript
+// packages/core/src/excalidraw/types.ts
+
+// Color palette for different service types
+export const SERVICE_COLORS = {
+  database: { stroke: "#1971c2", background: "#a5d8ff" },
+  cache: { stroke: "#e03131", background: "#ffc9c9" },
+  queue: { stroke: "#f08c00", background: "#ffec99" },
+  storage: { stroke: "#2f9e44", background: "#b2f2bb" },
+  proxy: { stroke: "#7950f2", background: "#d0bfff" },
+  container: { stroke: "#495057", background: "#dee2e6" },
+  ui: { stroke: "#0c8599", background: "#99e9f2" },
+} as const
+
+// Shape configuration for different service types
+export const SERVICE_SHAPES: Record<string, ExcalidrawElementType> = {
+  database: "ellipse",
+  cache: "ellipse",
+  storage: "ellipse",
+  queue: "diamond",
+  proxy: "rectangle",
+  container: "rectangle",
+  ui: "rectangle",
+} as const
+```
+
+Three rendering strategies are available:
+
+1. **ELK Renderer** (`elk-render.ts`) - Primary renderer using ELK-computed positions
+2. **Grouped Renderer** (`render.ts`) - Groups services by dependency path
+3. **Basic Renderer** (`render.ts`) - Simple grid layout fallback
+
+Arrows use Excalidraw's native `elbowed: true` for 90-degree orthogonal routing.
+
 ### Mermaid Debug Output
 
 ```typescript
 // packages/core/src/output/mermaid.ts
 
-import type { InfraGraph } from "../graph/schema"
-
-export function graphToMermaid(graph: InfraGraph): string {
-  const lines = ["flowchart TB"]
-
-  // Group nodes by category if available
-  const grouped = groupByCategory(graph.nodes)
-
-  for (const [category, nodes] of Object.entries(grouped)) {
-    if (category !== "ungrouped") {
-      lines.push(`  subgraph ${category}`)
-    }
-    for (const node of nodes) {
-      const shape = getNodeShape(node.type)
-      lines.push(`    ${node.id}${shape.open}${node.name}${shape.close}`)
-    }
-    if (category !== "ungrouped") {
-      lines.push("  end")
-    }
-  }
-
-  for (const edge of graph.edges) {
-    const label = edge.port ? `|:${edge.port}|` : ""
-    lines.push(`  ${edge.from} -->${label} ${edge.to}`)
-  }
-
-  return lines.join("\n")
-}
-
-function getNodeShape(type: string): { open: string; close: string } {
-  switch (type) {
-    case "database": return { open: "[(", close: ")]" }
-    case "cache": return { open: "((", close: "))" }
-    case "queue": return { open: "[/", close: "/]" }
-    default: return { open: "[", close: "]" }
-  }
-}
+export function graphToMermaid(graph: InfraGraph): string
+export function graphToMermaidStyled(graph: InfraGraph): string  // With service colors
 ```
 
 ### PNG Rendering
@@ -303,151 +404,21 @@ function getNodeShape(type: string): { open: string; close: string } {
 ```typescript
 // packages/core/src/output/png.ts
 
-import puppeteer from "puppeteer"
-
 export async function renderExcalidrawToPng(
-  excalidrawJson: string,
-  outputPath: string
-): Promise<void> {
-  const browser = await puppeteer.launch({ headless: true })
-  const page = await browser.newPage()
-
-  // Load minimal HTML with Excalidraw
-  await page.setContent(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <script src="https://unpkg.com/@excalidraw/excalidraw/dist/excalidraw.production.min.js"></script>
-      </head>
-      <body>
-        <div id="app" style="width: 1920px; height: 1080px;"></div>
-        <script>
-          const data = ${excalidrawJson};
-          ExcalidrawLib.exportToBlob({
-            elements: data.elements,
-            appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
-          }).then(blob => {
-            window.renderedBlob = blob;
-          });
-        </script>
-      </body>
-    </html>
-  `)
-
-  // Wait for render and save
-  await page.waitForFunction(() => window.renderedBlob)
-  const blob = await page.evaluate(() => window.renderedBlob.arrayBuffer())
-  await Bun.write(outputPath, new Uint8Array(blob))
-
-  await browser.close()
-}
+  excalidraw: ExcalidrawFile
+): Promise<Buffer>
 ```
 
-### Visual Validation (Claude Vision)
-
-```typescript
-// packages/core/src/pipeline/validate.ts
-
-import Anthropic from "@anthropic-ai/sdk"
-import type { InfraGraph } from "../graph/schema"
-
-export interface ValidationResult {
-  valid: boolean
-  issues: string[]
-  suggestions: string[]
-  scores: {
-    completeness: number  // 0-100: Are all expected nodes visible?
-    clarity: number       // 0-100: Is the layout clear and readable?
-    connections: number   // 0-100: Are edges clear and not overlapping?
-    grouping: number      // 0-100: Is logical grouping evident?
-  }
-}
-
-export async function validateDiagram(
-  pngPath: string,
-  graph: InfraGraph,
-  client: Anthropic
-): Promise<ValidationResult> {
-  const imageData = await Bun.file(pngPath).arrayBuffer()
-  const base64 = Buffer.from(imageData).toString("base64")
-
-  const expectedServices = graph.nodes.map(n => n.name).join(", ")
-  const expectedConnections = graph.edges.length
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1024,
-    messages: [{
-      role: "user",
-      content: [
-        {
-          type: "image",
-          source: { type: "base64", media_type: "image/png", data: base64 }
-        },
-        {
-          type: "text",
-          text: `Validate this infrastructure diagram.
-
-Expected:
-- ${graph.nodes.length} services: ${expectedServices}
-- ${expectedConnections} connections between services
-
-Evaluate:
-1. COMPLETENESS: Are all ${graph.nodes.length} services visible and labeled?
-2. CLARITY: Is the text readable? Are boxes appropriately sized?
-3. CONNECTIONS: Are the ${expectedConnections} edges clear? Any overlapping lines?
-4. GROUPING: Are related services (databases, caches, app servers) visually grouped?
-
-Return JSON only:
-{
-  "valid": boolean,
-  "issues": ["list of problems found"],
-  "suggestions": ["list of improvements"],
-  "scores": {
-    "completeness": 0-100,
-    "clarity": 0-100,
-    "connections": 0-100,
-    "grouping": 0-100
-  }
-}`
-        }
-      ]
-    }]
-  })
-
-  const text = response.content[0].type === "text" ? response.content[0].text : ""
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    throw new Error("Failed to parse validation response")
-  }
-
-  return JSON.parse(jsonMatch[0]) as ValidationResult
-}
-
-// Validation thresholds
-export const VALIDATION_THRESHOLDS = {
-  minimumScore: 70,        // Individual score minimum
-  minimumAverage: 80,      // Average across all scores
-  requiredValid: true,     // Must pass basic validity check
-}
-
-export function isValidationPassing(result: ValidationResult): boolean {
-  const scores = Object.values(result.scores)
-  const average = scores.reduce((a, b) => a + b, 0) / scores.length
-  const allAboveMinimum = scores.every(s => s >= VALIDATION_THRESHOLDS.minimumScore)
-
-  return (
-    result.valid &&
-    allAboveMinimum &&
-    average >= VALIDATION_THRESHOLDS.minimumAverage
-  )
-}
-```
+Uses Puppeteer with ESM-loaded Excalidraw via esm.sh with React import maps.
 
 ### Pipeline Interface
 
 ```typescript
-// packages/core/src/pipeline/index.ts
+// packages/core/src/pipeline/types.ts
+
+export type PipelineStep = "parse" | "enhance" | "layout" | "generate"
+
+export type ResolutionLevel = "executive" | "groups" | "services" | "detailed"
 
 export interface PipelineConfig {
   project: string
@@ -457,15 +428,17 @@ export interface PipelineConfig {
     enabled: boolean
     model?: string
   }
+  mermaid?: {
+    enabled: boolean
+  }
+  png?: {
+    enabled: boolean
+  }
   excalidraw?: {
     resolutionLevels: ResolutionLevel[]
     theme?: "light" | "dark"
   }
 }
-
-export type PipelineStep = "fetch" | "parse" | "enhance" | "generate" | "validate"
-
-export type ResolutionLevel = "executive" | "groups" | "services" | "detailed"
 
 export interface PipelineRun {
   id: string
@@ -474,6 +447,11 @@ export interface PipelineRun {
   completedAt?: string
   status: "running" | "completed" | "failed"
   steps: StepResult[]
+  sourceFiles?: string[]
+  config?: {
+    llmEnabled?: boolean
+    resolutionLevels?: ResolutionLevel[]
+  }
 }
 
 export interface StepResult {
@@ -481,13 +459,67 @@ export interface StepResult {
   status: "pending" | "running" | "completed" | "failed"
   startedAt?: string
   completedAt?: string
+  duration?: number
   outputFile?: string
+  outputFiles?: string[]
   error?: string
 }
-
-export async function runPipeline(config: PipelineConfig): Promise<PipelineRun>
-export async function runStep(config: PipelineConfig, step: PipelineStep): Promise<StepResult>
 ```
+
+---
+
+## Pipeline
+
+The pipeline runs four steps in sequence. Each step must complete successfully or the pipeline fails.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              CLARITY PIPELINE                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌──────────┐            │
+│   │  PARSE  │────▶│ ENHANCE │────▶│  LAYOUT │────▶│ GENERATE │            │
+│   └─────────┘     └─────────┘     └─────────┘     └──────────┘            │
+│        │               │               │               │                   │
+│        ▼               ▼               ▼               ▼                   │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌──────────┐            │
+│   │ 01-parsed│     │02-enhanced│    │03-elk-*  │     │ diagram. │            │
+│   │  .json  │     │  .json   │     │  .json   │     │excalidraw│            │
+│   │.mermaid │     │ .mermaid │     │          │     │  .png    │            │
+│   └─────────┘     └─────────┘     └─────────┘     └──────────┘            │
+│                                                                             │
+│   docker-compose  Claude API      ELK.js          Excalidraw               │
+│   YAML parsing    enrichment      layered layout  + Puppeteer              │
+│                   (optional)                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Parse
+Converts IaC files to `InfraGraph`. Currently supports docker-compose YAML.
+
+- Handles YAML aliases and merge keys (`<<`)
+- Infers service types from image names (postgres→database, redis→cache, etc.)
+- Parses ports, volumes, environment variables, replicas
+
+### 2. Enhance (optional, requires `--llm`)
+Uses Claude API to add semantic information:
+
+- Service descriptions
+- Group assignments (3-5 logical groups)
+- Queue roles (producer/consumer/both)
+
+### 3. Layout
+Converts InfraGraph to ELK format and computes positions:
+
+- Assigns services to semantic layers (entry→ui→api→worker→queue→data)
+- Adds port constraints for cache connections
+- Uses orthogonal edge routing
+
+### 4. Generate
+Creates Excalidraw JSON and renders PNG:
+
+- Uses ELK-computed positions
+- Renders PNG via Puppeteer
 
 ---
 
@@ -499,21 +531,25 @@ clarity fetch sentry --repo https://github.com/getsentry/self-hosted
 
 # List configured projects
 clarity list
+clarity list --all  # Include empty projects
 
 # Run full pipeline
 clarity run sentry
 
+# Run with LLM disabled
+clarity run sentry --no-llm
+
 # Run specific step
 clarity run sentry --step parse
+clarity run sentry --step generate
 
-# Run with specific resolution levels
-clarity run sentry --levels executive,services
+# Verbose output
+clarity run sentry --verbose
 
 # Inspect a previous run
+clarity inspect sentry                    # Latest run
 clarity inspect sentry --run 2024-01-08-143022
-
-# Compare two runs
-clarity diff sentry --runs 2024-01-08-143022,2024-01-08-152044
+clarity inspect sentry --json             # JSON output
 ```
 
 ### CLI Implementation
@@ -561,12 +597,7 @@ program.parse()
       "name": "Temporal",
       "repo": "https://github.com/temporalio/docker-compose",
       "files": [
-        { "path": "docker-compose.yml", "format": "docker-compose" },
-        { "path": "docker-compose-postgres.yml", "format": "docker-compose" }
-      ],
-      "helmRepo": "https://github.com/temporalio/helm-charts",
-      "helmFiles": [
-        { "path": "charts/temporal/values.yaml", "format": "helm" }
+        { "path": "docker-compose.yml", "format": "docker-compose" }
       ]
     },
     {
@@ -575,72 +606,10 @@ program.parse()
       "repo": "https://github.com/mastodon/mastodon",
       "files": [
         { "path": "docker-compose.yml", "format": "docker-compose" }
-      ],
-      "helmRepo": "https://github.com/mastodon/chart",
-      "ansibleRepo": "https://github.com/mastodon/mastodon-ansible"
+      ]
     }
   ]
 }
-```
-
----
-
-## Web UI
-
-Minimal Next.js app for viewing pipeline runs and outputs.
-
-### Pages
-
-1. **`/`** - Project list with last run status
-2. **`/[project]`** - List of runs for a project, trigger new run
-3. **`/[project]/[runId]`** - Step-by-step viewer with:
-   - Parsed graph visualization
-   - Enhanced graph with LLM annotations
-   - Excalidraw preview (embedded or iframe)
-   - Raw JSON viewers for each step
-   - Diff against previous run
-
-### API Routes (import from core)
-
-```typescript
-// packages/web/src/app/api/pipeline/route.ts
-
-import { runPipeline, type PipelineConfig } from "@clarity/core"
-
-export async function POST(request: Request) {
-  const config: PipelineConfig = await request.json()
-
-  // Same pipeline code used by CLI
-  const run = await runPipeline(config)
-
-  return Response.json(run)
-}
-```
-
-### Key Components
-
-```typescript
-// packages/web/src/components/StepViewer.tsx
-
-interface StepViewerProps {
-  run: PipelineRun
-  step: PipelineStep
-}
-
-// Shows step status, timing, and output
-// Tabs for: Preview | Raw JSON | Diff
-```
-
-```typescript
-// packages/web/src/components/ExcalidrawPreview.tsx
-
-interface ExcalidrawPreviewProps {
-  excalidrawJson: string
-  level: ResolutionLevel
-}
-
-// Renders Excalidraw using @excalidraw/excalidraw package
-// Read-only preview mode
 ```
 
 ---
@@ -651,18 +620,15 @@ Each run creates a timestamped directory:
 
 ```
 test-data/sentry/runs/2024-01-08-143022/
-├── meta.json                               # Run metadata, timing, status
-├── 01-parsed.json                          # InfraGraph after parsing
-├── 01-parsed.mermaid                       # Optional Mermaid debug output
-├── 02-enhanced.json                        # InfraGraph after LLM enhancement
-├── 02-enhanced.mermaid                     # Optional Mermaid with categories
-├── 03-excalidraw-executive.json            # Excalidraw JSON
-├── 03-excalidraw-executive.png             # Rendered PNG preview
-├── 03-excalidraw-services.json
-├── 03-excalidraw-services.png
-├── 04-validation-executive.json            # Vision QA results per level
-├── 04-validation-services.json
-└── 04-validation-summary.json              # Overall pass/fail + aggregated scores
+├── meta.json                     # Run metadata, timing, status
+├── 01-parsed.json                # InfraGraph after parsing
+├── 01-parsed.mermaid             # Mermaid debug output
+├── 02-enhanced.json              # InfraGraph after LLM enhancement
+├── 02-enhanced.mermaid           # Mermaid with groups/descriptions
+├── 03-elk-input.json             # ELK graph input
+├── 03-elk-output.json            # ELK graph with computed positions
+├── diagram.excalidraw            # Excalidraw JSON file
+└── diagram.png                   # Rendered PNG preview
 ```
 
 ### Meta file
@@ -679,47 +645,40 @@ test-data/sentry/runs/2024-01-08-143022/
       "step": "parse",
       "status": "completed",
       "duration": 1250,
-      "outputFile": "01-parsed.json"
+      "outputFile": "01-parsed.json",
+      "outputFiles": ["01-parsed.json", "01-parsed.mermaid"]
     },
     {
       "step": "enhance",
       "status": "completed",
       "duration": 8500,
       "outputFile": "02-enhanced.json",
-      "llmModel": "claude-sonnet-4-20250514",
-      "tokensUsed": 2340
+      "llmModel": "claude-sonnet-4-20250514"
+    },
+    {
+      "step": "layout",
+      "status": "completed",
+      "duration": 450,
+      "outputFile": "03-elk-output.json",
+      "layers": {
+        "entry": ["nginx"],
+        "api": ["web", "relay"],
+        "worker": ["worker", "cron"],
+        "data": ["postgres", "redis", "memcached"]
+      }
     },
     {
       "step": "generate",
       "status": "completed",
-      "duration": 350,
-      "outputFiles": [
-        "03-excalidraw-executive.json",
-        "03-excalidraw-executive.png",
-        "03-excalidraw-services.json",
-        "03-excalidraw-services.png"
-      ]
-    },
-    {
-      "step": "validate",
-      "status": "completed",
-      "duration": 12500,
-      "outputFiles": [
-        "04-validation-executive.json",
-        "04-validation-services.json",
-        "04-validation-summary.json"
-      ],
-      "llmModel": "claude-sonnet-4-20250514",
-      "tokensUsed": 1820,
-      "validationPassed": true,
-      "averageScore": 87
+      "duration": 2350,
+      "outputFile": "diagram.excalidraw",
+      "outputFiles": ["diagram.excalidraw", "diagram.png"],
+      "pngGenerated": true
     }
   ],
   "sourceFiles": ["docker-compose.yml"],
   "config": {
-    "resolutionLevels": ["executive", "services"],
-    "llmEnabled": true,
-    "validationEnabled": true
+    "llmEnabled": true
   }
 }
 ```
@@ -735,12 +694,11 @@ test-data/sentry/runs/2024-01-08-143022/
 | **Build** | Bun | Native bundling, no extra tooling |
 | **Monorepo** | Bun workspaces + Turborepo | Bun for packages, Turbo for task caching |
 | **CLI Framework** | Commander | Simple, well-documented |
-| **Web Framework** | Next.js 16 (App Router) | File-based routing, API routes, Turbopack |
-| **Styling** | Tailwind | Quick iteration, matches your stack |
 | **YAML Parsing** | yaml | Standard YAML parsing |
 | **Validation** | Zod | Runtime schema validation with TypeScript inference |
+| **Layout Engine** | ELK.js | Layered graph layout with semantic partitioning |
 | **LLM** | @anthropic-ai/sdk | Claude API |
-| **Excalidraw** | @excalidraw/excalidraw | Embed and generate |
+| **Excalidraw** | Native JSON format | Direct JSON generation |
 | **PNG Rendering** | Puppeteer | Headless browser for Excalidraw → PNG |
 | **Linting** | Biome | Fast, matches your preferences |
 
@@ -752,66 +710,51 @@ test-data/sentry/runs/2024-01-08-143022/
 # Install dependencies
 bun install
 
-# Development (runs all packages in watch mode)
-bun run dev
-
-# Run CLI during development
-bun run --cwd packages/cli dev -- run sentry
+# Run CLI directly (no build needed)
+bun run clarity <command>
 
 # Build all packages
 bun run build
 
-# Run the CLI (after build)
-bun run clarity run sentry
-
-# Run web UI
-bun run --cwd packages/web dev
-
 # Run tests
 bun test
+
+# Run a single test file
+bun test packages/core/src/llm/client.test.ts
+
+# Run tests matching a pattern
+bun test --grep "enhance"
+
+# Lint and format
+bun run lint
+bun run format
 ```
 
 ---
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 1: Foundation
-- [ ] Initialize monorepo structure
-- [ ] Set up core package with types
-- [ ] Implement docker-compose parser
-- [ ] Basic CLI with `fetch` and `run` commands
-- [ ] File-based run storage
+### Completed
+- [x] Monorepo structure with core and cli packages
+- [x] Docker-compose parser with type inference
+- [x] InfraGraph types and Zod schemas
+- [x] GraphBuilder fluent API
+- [x] Claude API client and enhancement prompts
+- [x] ELK layout module with semantic layering
+- [x] Excalidraw JSON generation with shape/color differentiation
+- [x] PNG rendering via Puppeteer
+- [x] Mermaid debug output
+- [x] CLI commands: fetch, run, list, inspect
+- [x] Run storage with timestamped directories
 
-### Phase 2: Pipeline
-- [ ] Intermediate graph builder
-- [ ] Excalidraw JSON generator (single resolution)
-- [ ] Basic layout algorithm
-- [ ] `inspect` CLI command
-
-### Phase 3: LLM Enhancement
-- [ ] Claude API integration
-- [ ] Service categorization prompts
-- [ ] Grouping and labeling
-- [ ] Multiple resolution levels
-
-### Phase 4: PNG Rendering & Visual Validation
-- [ ] Puppeteer integration for PNG export
-- [ ] Claude Vision validation implementation
-- [ ] Validation scoring and thresholds
-- [ ] Re-generation loop on validation failure (optional)
-- [ ] Mermaid debug output
-
-### Phase 5: Web UI
-- [ ] Project list page
-- [ ] Run viewer with step navigation
-- [ ] Excalidraw preview component
-- [ ] Validation results display
-- [ ] Trigger runs from UI
-
-### Phase 6: Additional Parsers
+### Not Yet Implemented
+- [ ] Web UI for viewing pipeline runs
 - [ ] Helm chart parser
 - [ ] Terraform parser
-- [ ] Cross-format validation
+- [ ] Ansible parser
+- [ ] Multi-file docker-compose merging
+- [ ] Multiple resolution levels (executive, groups, services, detailed)
+- [ ] LLM response caching
 
 ---
 
@@ -819,12 +762,16 @@ bun test
 
 | Decision | Choice | Notes |
 |----------|--------|-------|
-| **Test data storage** | Git-tracked | Easy to diff runs, share test cases, see history |
-| **LLM provider** | Claude only | Simpler, Anthropic SDK already available |
-| **Image output** | JSON + PNG | Generate static previews via Puppeteer |
-| **Mermaid output** | Yes, optional | ~20 lines, useful for quick validation |
+| **Test data storage** | Git-tracked | Easy to diff runs, share test cases |
+| **LLM provider** | Claude only | Simpler, Anthropic SDK available |
+| **Layout engine** | ELK.js | Layered algorithm fits architecture diagrams |
+| **ELK execution** | Subprocess | CJS compatibility with ESM project |
+| **Image output** | JSON + PNG | Static previews via Puppeteer |
+| **Arrow routing** | Excalidraw elbowed | Native orthogonal routing |
+| **Mermaid output** | Optional debug | Quick validation without PNG |
 
 ## Open Questions
 
-1. **Excalidraw layout algorithm** - Use existing library (dagre, elkjs) or custom?
+1. **Multi-resolution output** - How to implement executive/groups/services/detailed views?
 2. **LLM caching** - Cache enhancement results to avoid re-running for unchanged graphs?
+3. **Web UI** - Lightweight viewer for pipeline runs and outputs?

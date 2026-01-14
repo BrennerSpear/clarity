@@ -3,8 +3,7 @@ import { join } from "node:path"
 import type { ElkGraph } from "../elk/types"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
-import type { PipelineRun, ResolutionLevel } from "./types"
-import type { ValidationSummary, VisualValidationResult } from "./validate"
+import type { PipelineRun } from "./types"
 
 /**
  * Generate a run ID from current timestamp
@@ -352,10 +351,9 @@ export async function savePngFile(
 	project: string,
 	runId: string,
 	buffer: Buffer,
-	suffix?: string,
 ): Promise<string> {
 	const runDir = await ensureRunDir(project, runId)
-	const filename = suffix ? `03-excalidraw-${suffix}.png` : "03-excalidraw.png"
+	const filename = "diagram.png"
 	const filepath = join(runDir, filename)
 	await writeFile(filepath, buffer)
 	return filename
@@ -364,14 +362,9 @@ export async function savePngFile(
 /**
  * Get PNG file path
  */
-export function getPngPath(
-	project: string,
-	runId: string,
-	suffix?: string,
-): string {
+export function getPngPath(project: string, runId: string): string {
 	const runDir = getRunDir(project, runId)
-	const filename = suffix ? `03-excalidraw-${suffix}.png` : "03-excalidraw.png"
-	return join(runDir, filename)
+	return join(runDir, "diagram.png")
 }
 
 /**
@@ -380,9 +373,8 @@ export function getPngPath(
 export async function loadPngFile(
 	project: string,
 	runId: string,
-	suffix?: string,
 ): Promise<Buffer | null> {
-	const filepath = getPngPath(project, runId, suffix)
+	const filepath = getPngPath(project, runId)
 	try {
 		return await readFile(filepath)
 	} catch {
@@ -424,70 +416,3 @@ export async function loadMermaidFile(
 	}
 }
 
-/**
- * Save validation result for a specific resolution level
- */
-export async function saveValidationResult(
-	project: string,
-	runId: string,
-	result: VisualValidationResult,
-	level: ResolutionLevel,
-): Promise<string> {
-	const runDir = await ensureRunDir(project, runId)
-	const filename = `04-validation-${level}.json`
-	const filepath = join(runDir, filename)
-	await writeFile(filepath, JSON.stringify(result, null, 2))
-	return filename
-}
-
-/**
- * Load validation result for a specific resolution level
- */
-export async function loadValidationResult(
-	project: string,
-	runId: string,
-	level: ResolutionLevel,
-): Promise<VisualValidationResult | null> {
-	const runDir = getRunDir(project, runId)
-	const filename = `04-validation-${level}.json`
-	const filepath = join(runDir, filename)
-	try {
-		const content = await readFile(filepath, "utf-8")
-		return JSON.parse(content) as VisualValidationResult
-	} catch {
-		return null
-	}
-}
-
-/**
- * Save validation summary
- */
-export async function saveValidationSummary(
-	project: string,
-	runId: string,
-	summary: ValidationSummary,
-): Promise<string> {
-	const runDir = await ensureRunDir(project, runId)
-	const filename = "04-validation-summary.json"
-	const filepath = join(runDir, filename)
-	await writeFile(filepath, JSON.stringify(summary, null, 2))
-	return filename
-}
-
-/**
- * Load validation summary
- */
-export async function loadValidationSummary(
-	project: string,
-	runId: string,
-): Promise<ValidationSummary | null> {
-	const runDir = getRunDir(project, runId)
-	const filename = "04-validation-summary.json"
-	const filepath = join(runDir, filename)
-	try {
-		const content = await readFile(filepath, "utf-8")
-		return JSON.parse(content) as ValidationSummary
-	} catch {
-		return null
-	}
-}

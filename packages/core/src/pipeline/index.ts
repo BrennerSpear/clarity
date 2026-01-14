@@ -3,10 +3,6 @@ import { infraGraphToElk, summarizeLayers } from "../elk/convert"
 import { runLayout } from "../elk/layout"
 import type { ElkGraph } from "../elk/types"
 import { renderWithElkLayout } from "../excalidraw/elk-render"
-import {
-	renderGroupedToExcalidraw,
-	renderToExcalidraw,
-} from "../excalidraw/render"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
 import { createClient, parseJsonResponse, sendMessage } from "../llm/client"
@@ -21,7 +17,6 @@ import { parseDockerCompose } from "../parsers/docker-compose"
 import {
 	ensureRunDir,
 	generateRunId,
-	getPngPath,
 	listSourceFiles,
 	readSourceFile,
 	saveElkInput,
@@ -32,27 +27,11 @@ import {
 	saveParsedGraph,
 	savePngFile,
 	saveRunMeta,
-	saveValidationResult,
-	saveValidationSummary,
 } from "./storage"
-import type {
-	PipelineConfig,
-	PipelineRun,
-	ResolutionLevel,
-	StepResult,
-} from "./types"
-import {
-	type ValidationSummary,
-	type VisualValidationResult,
-	calculateAverageScore,
-	createValidationSummary,
-	isValidationPassing,
-	validateDiagram,
-} from "./validate"
+import type { PipelineConfig, PipelineRun, StepResult } from "./types"
 
 export * from "./types"
 export * from "./storage"
-export * from "./validate"
 
 /**
  * Run the parse step: parse all source files into an InfraGraph
@@ -326,10 +305,9 @@ export async function runGenerateStep(
 	project: string,
 	runId: string,
 	graph: InfraGraph,
-	options?: {
+	options: {
 		renderPng?: boolean
-		grouped?: boolean
-		elkGraph?: ElkGraph
+		elkGraph: ElkGraph
 	},
 ): Promise<{
 	excalidraw: ExcalidrawFile
@@ -338,23 +316,11 @@ export async function runGenerateStep(
 }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
-	const shouldRenderPng = options?.renderPng !== false
-	const useGrouped = options?.grouped !== false // Default to grouped
+	const shouldRenderPng = options.renderPng !== false
 
 	try {
-		// Generate Excalidraw JSON
-		// Use ELK layout if provided, otherwise fall back to grouped/basic
-		let excalidraw: ExcalidrawFile
-		if (options?.elkGraph) {
-			excalidraw = renderWithElkLayout(graph, options.elkGraph)
-		} else if (useGrouped) {
-			excalidraw = renderGroupedToExcalidraw(graph, {
-				minGroupSize: 5,
-				showEdgeDirection: true,
-			})
-		} else {
-			excalidraw = renderToExcalidraw(graph)
-		}
+		// Generate Excalidraw JSON using ELK layout
+		const excalidraw = renderWithElkLayout(graph, options.elkGraph)
 
 		const outputFiles: string[] = []
 
@@ -365,17 +331,9 @@ export async function runGenerateStep(
 		// Render to PNG if enabled
 		let pngBuffer: Buffer | undefined
 		if (shouldRenderPng) {
-			try {
-				pngBuffer = await renderExcalidrawToPng(excalidraw)
-				const pngFile = await savePngFile(project, runId, pngBuffer)
-				outputFiles.push(pngFile)
-			} catch (pngError) {
-				// Log but don't fail - PNG is optional
-				console.warn(
-					"PNG rendering failed:",
-					pngError instanceof Error ? pngError.message : String(pngError),
-				)
-			}
+			pngBuffer = await renderExcalidrawToPng(excalidraw)
+			const pngFile = await savePngFile(project, runId, pngBuffer)
+			outputFiles.push(pngFile)
 		}
 
 		const duration = Date.now() - startTime
@@ -418,120 +376,15 @@ export async function runGenerateStep(
 }
 
 /**
- * Validate step result with validation details
- */
-export interface ValidateStepResult extends StepResult {
-	llmModel?: string
-	tokensUsed?: number
-	validationPassed?: boolean
-	averageScore?: number
-}
-
-/**
- * Run the validate step: use Claude Vision to validate the generated diagram
- */
-export async function runValidateStep(
-	project: string,
-	runId: string,
-	graph: InfraGraph,
-	pngBuffer: Buffer,
-	client?: Anthropic,
-	model?: string,
-): Promise<{
-	validationResult: VisualValidationResult
-	result: ValidateStepResult
-}> {
-	const startedAt = new Date().toISOString()
-	const startTime = Date.now()
-
-	try {
-		const llmClient = client ?? createClient()
-		const llmModel = model ?? "claude-sonnet-4-20250514"
-
-		// Validate the diagram
-		const validationResult = await validateDiagram(
-			pngBuffer,
-			graph,
-			llmClient,
-			llmModel,
-		)
-
-		const outputFiles: string[] = []
-
-		// Save validation result
-		const outputFile = await saveValidationResult(
-			project,
-			runId,
-			validationResult,
-			"services",
-		)
-		outputFiles.push(outputFile)
-
-		// Create and save summary
-		const summary = createValidationSummary({ services: validationResult })
-		const summaryFile = await saveValidationSummary(project, runId, summary)
-		outputFiles.push(summaryFile)
-
-		const duration = Date.now() - startTime
-		const passed = isValidationPassing(validationResult)
-		const avgScore = calculateAverageScore(validationResult)
-
-		return {
-			validationResult,
-			result: {
-				step: "validate",
-				status: "completed",
-				startedAt,
-				completedAt: new Date().toISOString(),
-				duration,
-				outputFile,
-				outputFiles,
-				llmModel,
-				validationPassed: passed,
-				averageScore: avgScore,
-			},
-		}
-	} catch (error) {
-		const duration = Date.now() - startTime
-		return {
-			validationResult: {
-				valid: false,
-				issues: [error instanceof Error ? error.message : String(error)],
-				suggestions: [],
-				scores: { completeness: 0, clarity: 0, connections: 0, grouping: 0 },
-			},
-			result: {
-				step: "validate",
-				status: "failed",
-				startedAt,
-				completedAt: new Date().toISOString(),
-				duration,
-				error: error instanceof Error ? error.message : String(error),
-			},
-		}
-	}
-}
-
-/**
- * Pipeline run config with validation options
+ * Pipeline run config
  */
 export interface ExtendedPipelineConfig extends PipelineConfig {
-	validation?: {
-		enabled: boolean
-		model?: string
-	}
 	mermaid?: {
 		enabled: boolean
 	}
 	png?: {
 		enabled: boolean
 	}
-	/** Run ELK layout step (default: true) */
-	layout?: {
-		enabled: boolean
-	}
-	/** Group services by dependency path (default: true) */
-	grouped?: boolean
 }
 
 /**
@@ -545,9 +398,6 @@ export async function runPipeline(
 
 	const saveMermaid = config.mermaid?.enabled === true
 	const renderPng = config.png?.enabled !== false
-	const validateEnabled = config.validation?.enabled ?? false
-	const layoutEnabled = config.layout?.enabled !== false // Default to enabled
-	const useGrouped = config.grouped !== false // Default to grouped
 
 	const run: PipelineRun = {
 		id: runId,
@@ -557,15 +407,13 @@ export async function runPipeline(
 		steps: [],
 		config: {
 			llmEnabled: config.llm?.enabled ?? false,
-			validationEnabled: validateEnabled,
-			resolutionLevels: config.excalidraw?.resolutionLevels,
 		},
 	}
 
 	// Save initial state
 	await saveRunMeta(config.project, runId, run)
 
-	// Run parse step
+	// Step 1: Parse
 	const { graph: parsedGraph, result: parseResult } = await runParseStep(
 		config.project,
 		runId,
@@ -584,7 +432,7 @@ export async function runPipeline(
 	// Track the current graph (may be enhanced or not)
 	let currentGraph = parsedGraph
 
-	// Run enhance step if LLM is enabled
+	// Step 2: Enhance (if LLM is enabled)
 	if (config.llm?.enabled) {
 		const { graph: enhancedGraph, result: enhanceResult } =
 			await runEnhanceStep(
@@ -599,35 +447,36 @@ export async function runPipeline(
 		await saveRunMeta(config.project, runId, run)
 
 		if (enhanceResult.status === "failed") {
-			// Continue with unenhanced graph but log warning
-			console.warn("Enhancement failed, continuing with parsed graph")
-		} else {
-			currentGraph = enhancedGraph
+			run.status = "failed"
+			run.completedAt = new Date().toISOString()
+			await saveRunMeta(config.project, runId, run)
+			return run
 		}
+		currentGraph = enhancedGraph
 	}
 
-	// Run layout step if enabled
-	let elkGraph: ElkGraph | undefined
-	if (layoutEnabled) {
-		const { elkGraph: layoutElkGraph, result: layoutResult } =
-			await runLayoutStep(config.project, runId, currentGraph)
-		run.steps.push(layoutResult)
-		await saveRunMeta(config.project, runId, run)
-
-		if (layoutResult.status === "failed") {
-			// Continue without layout but log warning
-			console.warn("Layout failed, continuing with basic generate")
-		} else {
-			elkGraph = layoutElkGraph
-		}
-	}
-
-	// Run generate step (use ELK positions if available)
-	const { pngBuffer, result: generateResult } = await runGenerateStep(
+	// Step 3: Layout
+	const { elkGraph, result: layoutResult } = await runLayoutStep(
 		config.project,
 		runId,
 		currentGraph,
-		{ renderPng, grouped: useGrouped, elkGraph },
+	)
+	run.steps.push(layoutResult)
+	await saveRunMeta(config.project, runId, run)
+
+	if (layoutResult.status === "failed") {
+		run.status = "failed"
+		run.completedAt = new Date().toISOString()
+		await saveRunMeta(config.project, runId, run)
+		return run
+	}
+
+	// Step 4: Generate
+	const { result: generateResult } = await runGenerateStep(
+		config.project,
+		runId,
+		currentGraph,
+		{ renderPng, elkGraph },
 	)
 	run.steps.push(generateResult)
 	await saveRunMeta(config.project, runId, run)
@@ -639,25 +488,9 @@ export async function runPipeline(
 		return run
 	}
 
-	// Run validate step if enabled and PNG was generated
-	if (validateEnabled && pngBuffer) {
-		const { result: validateResult } = await runValidateStep(
-			config.project,
-			runId,
-			currentGraph,
-			pngBuffer,
-			undefined,
-			config.validation?.model,
-		)
-		run.steps.push(validateResult)
-	}
-
-	// Update status based on step results
-	const hasFailedStep = run.steps.some((s) => s.status === "failed")
-	run.status = hasFailedStep ? "failed" : "completed"
+	// Pipeline completed successfully
+	run.status = "completed"
 	run.completedAt = new Date().toISOString()
-
-	// Save final state
 	await saveRunMeta(config.project, runId, run)
 
 	return run
@@ -685,11 +518,7 @@ export async function runStep(
 				runId,
 			)
 			if (parseResult.status === "failed") {
-				return {
-					step: "enhance",
-					status: "failed",
-					error: `Parse step failed: ${parseResult.error}`,
-				}
+				throw new Error(`Parse step failed: ${parseResult.error}`)
 			}
 			const { result } = await runEnhanceStep(
 				config.project,
@@ -698,20 +527,53 @@ export async function runStep(
 				undefined,
 				config.llm?.model,
 			)
+			if (result.status === "failed") {
+				throw new Error(`Enhance step failed: ${result.error}`)
+			}
 			return result
 		}
-		case "generate": {
-			// First need to parse and optionally enhance
+		case "layout": {
+			// First need to parse
 			const { graph: parsedGraph, result: parseResult } = await runParseStep(
 				config.project,
 				runId,
 			)
 			if (parseResult.status === "failed") {
-				return {
-					step: "generate",
-					status: "failed",
-					error: `Parse step failed: ${parseResult.error}`,
+				throw new Error(`Parse step failed: ${parseResult.error}`)
+			}
+
+			let graphToLayout = parsedGraph
+
+			// If LLM is enabled, enhance first
+			if (config.llm?.enabled) {
+				const { graph: enhancedGraph, result: enhanceResult } =
+					await runEnhanceStep(
+						config.project,
+						runId,
+						parsedGraph,
+						undefined,
+						config.llm.model,
+					)
+				if (enhanceResult.status === "failed") {
+					throw new Error(`Enhance step failed: ${enhanceResult.error}`)
 				}
+				graphToLayout = enhancedGraph
+			}
+
+			const { result } = await runLayoutStep(config.project, runId, graphToLayout)
+			if (result.status === "failed") {
+				throw new Error(`Layout step failed: ${result.error}`)
+			}
+			return result
+		}
+		case "generate": {
+			// Need to run parse, optionally enhance, then layout
+			const { graph: parsedGraph, result: parseResult } = await runParseStep(
+				config.project,
+				runId,
+			)
+			if (parseResult.status === "failed") {
+				throw new Error(`Parse step failed: ${parseResult.error}`)
 			}
 
 			let graphToRender = parsedGraph
@@ -726,78 +588,31 @@ export async function runStep(
 						undefined,
 						config.llm.model,
 					)
-				if (enhanceResult.status === "completed") {
-					graphToRender = enhancedGraph
+				if (enhanceResult.status === "failed") {
+					throw new Error(`Enhance step failed: ${enhanceResult.error}`)
 				}
+				graphToRender = enhancedGraph
 			}
 
-			const { result } = await runGenerateStep(
+			// Run layout
+			const { elkGraph, result: layoutResult } = await runLayoutStep(
 				config.project,
 				runId,
 				graphToRender,
 			)
-			return result
-		}
-		case "validate": {
-			// Need to run full pipeline up to generate, then validate
-			const { graph: parsedGraph, result: parseResult } = await runParseStep(
-				config.project,
-				runId,
-			)
-			if (parseResult.status === "failed") {
-				return {
-					step: "validate",
-					status: "failed",
-					error: `Parse step failed: ${parseResult.error}`,
-				}
+			if (layoutResult.status === "failed") {
+				throw new Error(`Layout step failed: ${layoutResult.error}`)
 			}
 
-			let graphToRender = parsedGraph
-
-			if (config.llm?.enabled) {
-				const { graph: enhancedGraph, result: enhanceResult } =
-					await runEnhanceStep(
-						config.project,
-						runId,
-						parsedGraph,
-						undefined,
-						config.llm.model,
-					)
-				if (enhanceResult.status === "completed") {
-					graphToRender = enhancedGraph
-				}
+			const { result } = await runGenerateStep(config.project, runId, graphToRender, {
+				elkGraph,
+			})
+			if (result.status === "failed") {
+				throw new Error(`Generate step failed: ${result.error}`)
 			}
-
-			const { pngBuffer, result: generateResult } = await runGenerateStep(
-				config.project,
-				runId,
-				graphToRender,
-				{ renderPng: true },
-			)
-
-			if (generateResult.status === "failed" || !pngBuffer) {
-				return {
-					step: "validate",
-					status: "failed",
-					error: "Generate step failed or PNG not available",
-				}
-			}
-
-			const { result } = await runValidateStep(
-				config.project,
-				runId,
-				graphToRender,
-				pngBuffer,
-				undefined,
-				config.validation?.model,
-			)
 			return result
 		}
 		default:
-			return {
-				step: step as StepResult["step"],
-				status: "failed",
-				error: `Step "${step}" not implemented yet`,
-			}
+			throw new Error(`Unknown step: ${step}`)
 	}
 }

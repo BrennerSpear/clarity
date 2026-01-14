@@ -4,7 +4,6 @@ export type PipelineStep =
 	| "enhance"
 	| "layout"
 	| "generate"
-	| "validate"
 
 export type ResolutionLevel = "executive" | "groups" | "services" | "detailed"
 
@@ -47,6 +46,5 @@ export interface PipelineRun {
 	config?: {
 		resolutionLevels?: ResolutionLevel[]
 		llmEnabled?: boolean
-		validationEnabled?: boolean
 	}
 }
