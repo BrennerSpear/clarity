@@ -42,7 +42,7 @@ export * from "./storage"
 export async function runParseStep(
 	project: string,
 	runId: string,
-	options?: { saveMermaid?: boolean },
+	options?: { saveMermaid?: boolean; helmValuesFiles?: string[] },
 ): Promise<{ graph: InfraGraph; result: StepResult }> {
 	const startedAt = new Date().toISOString()
 	const startTime = Date.now()
@@ -84,7 +84,13 @@ export async function runParseStep(
 				: "."
 			const sourceRoot = getSourceDir(project)
 			const chartPath = join(sourceRoot, chartDir)
-			graph = parseHelmChart(chartPath, project, sourceRoot)
+			const resolvedValuesFiles =
+				options?.helmValuesFiles?.map((file) =>
+					file.startsWith("/") ? file : join(sourceRoot, file),
+				) ?? []
+			graph = parseHelmChart(chartPath, project, sourceRoot, {
+				valuesFiles: resolvedValuesFiles,
+			})
 		} else {
 			// Try any yaml file as docker-compose
 			const yamlFiles = sourceFiles.filter(
@@ -416,6 +422,8 @@ export interface ExtendedPipelineConfig extends PipelineConfig {
 	png?: {
 		enabled: boolean
 	}
+	runId?: string
+	helmValuesFiles?: string[]
 }
 
 /**
@@ -424,7 +432,7 @@ export interface ExtendedPipelineConfig extends PipelineConfig {
 export async function runPipeline(
 	config: ExtendedPipelineConfig,
 ): Promise<PipelineRun> {
-	const runId = generateRunId()
+	const runId = config.runId ?? generateRunId()
 	await ensureRunDir(config.project, runId)
 
 	const saveMermaid = config.mermaid?.enabled === true
@@ -448,7 +456,7 @@ export async function runPipeline(
 	const { graph: parsedGraph, result: parseResult } = await runParseStep(
 		config.project,
 		runId,
-		{ saveMermaid },
+		{ saveMermaid, helmValuesFiles: config.helmValuesFiles },
 	)
 	run.steps.push(parseResult)
 	run.sourceFiles = parsedGraph.metadata.sourceFiles
@@ -534,12 +542,14 @@ export async function runStep(
 	config: ExtendedPipelineConfig,
 	step: PipelineConfig["steps"] extends (infer T)[] ? T : never,
 ): Promise<StepResult> {
-	const runId = generateRunId()
+	const runId = config.runId ?? generateRunId()
 	await ensureRunDir(config.project, runId)
 
 	switch (step) {
 		case "parse": {
-			const { result } = await runParseStep(config.project, runId)
+			const { result } = await runParseStep(config.project, runId, {
+				helmValuesFiles: config.helmValuesFiles,
+			})
 			return result
 		}
 		case "enhance": {
@@ -547,6 +557,7 @@ export async function runStep(
 			const { graph, result: parseResult } = await runParseStep(
 				config.project,
 				runId,
+				{ helmValuesFiles: config.helmValuesFiles },
 			)
 			if (parseResult.status === "failed") {
 				throw new Error(`Parse step failed: ${parseResult.error}`)
@@ -568,6 +579,7 @@ export async function runStep(
 			const { graph: parsedGraph, result: parseResult } = await runParseStep(
 				config.project,
 				runId,
+				{ helmValuesFiles: config.helmValuesFiles },
 			)
 			if (parseResult.status === "failed") {
 				throw new Error(`Parse step failed: ${parseResult.error}`)
@@ -606,6 +618,7 @@ export async function runStep(
 			const { graph: parsedGraph, result: parseResult } = await runParseStep(
 				config.project,
 				runId,
+				{ helmValuesFiles: config.helmValuesFiles },
 			)
 			if (parseResult.status === "failed") {
 				throw new Error(`Parse step failed: ${parseResult.error}`)

@@ -13,6 +13,12 @@
 			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
 		},
 		{
+			"id": "temporal-helm",
+			"name": "Temporal (Helm)",
+			"repo": "https://go.temporal.io/helm-charts",
+			"files": []
+		},
+		{
 			"id": "mastodon",
 			"name": "Mastodon",
 			"repo": "https://github.com/mastodon/mastodon",
