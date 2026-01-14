@@ -3,7 +3,6 @@
 	"version": "0.1.0",
 	"main": "./src/index.ts",
 	"dependencies": {
-		"@anthropic-ai/sdk": "0.71.2",
 		"elkjs": "0.11.0",
 		"puppeteer": "^24.0.0",
 		"yaml": "^2.6.1",

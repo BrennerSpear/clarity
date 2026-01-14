@@ -1,11 +1,10 @@
-import type Anthropic from "@anthropic-ai/sdk"
 import { infraGraphToElk, summarizeLayers } from "../elk/convert"
 import { runLayout } from "../elk/layout"
 import type { ElkGraph } from "../elk/types"
 import { renderWithElkLayout } from "../excalidraw/elk-render"
 import type { ExcalidrawFile } from "../excalidraw/types"
 import type { InfraGraph } from "../graph/types"
-import { createClient, parseJsonResponse, sendMessage } from "../llm/client"
+import { DEFAULT_MODEL, parseJsonResponse, sendMessage } from "../llm/client"
 import {
 	type EnhancementResponse,
 	applyEnhancements,
@@ -148,7 +147,7 @@ export async function runEnhanceStep(
 	project: string,
 	runId: string,
 	graph: InfraGraph,
-	client?: Anthropic,
+	apiKey: string,
 	model?: string,
 	options?: { saveMermaid?: boolean },
 ): Promise<{ graph: InfraGraph; result: EnhanceStepResult }> {
@@ -156,13 +155,11 @@ export async function runEnhanceStep(
 	const startTime = Date.now()
 
 	try {
-		// Create client if not provided
-		const llmClient = client ?? createClient()
-		const llmModel = model ?? "claude-sonnet-4-20250514"
+		const llmModel = model ?? DEFAULT_MODEL
 
 		// Build prompt and send to LLM
 		const prompt = buildEnhancePrompt(graph)
-		const response = await sendMessage(llmClient, prompt, { model: llmModel })
+		const response = await sendMessage(apiKey, prompt, { model: llmModel })
 
 		// Parse response and apply enhancements
 		const enhancements = parseJsonResponse<EnhancementResponse>(response)
@@ -432,14 +429,14 @@ export async function runPipeline(
 	// Track the current graph (may be enhanced or not)
 	let currentGraph = parsedGraph
 
-	// Step 2: Enhance (if LLM is enabled)
-	if (config.llm?.enabled) {
+	// Step 2: Enhance (if LLM is enabled and API key is provided)
+	if (config.llm?.enabled && config.llm.apiKey) {
 		const { graph: enhancedGraph, result: enhanceResult } =
 			await runEnhanceStep(
 				config.project,
 				runId,
 				currentGraph,
-				undefined, // Use default client
+				config.llm.apiKey,
 				config.llm.model,
 				{ saveMermaid },
 			)
@@ -520,12 +517,15 @@ export async function runStep(
 			if (parseResult.status === "failed") {
 				throw new Error(`Parse step failed: ${parseResult.error}`)
 			}
+			if (!config.llm?.apiKey) {
+				throw new Error("API key required for enhance step")
+			}
 			const { result } = await runEnhanceStep(
 				config.project,
 				runId,
 				graph,
-				undefined,
-				config.llm?.model,
+				config.llm.apiKey,
+				config.llm.model,
 			)
 			if (result.status === "failed") {
 				throw new Error(`Enhance step failed: ${result.error}`)
@@ -544,14 +544,14 @@ export async function runStep(
 
 			let graphToLayout = parsedGraph
 
-			// If LLM is enabled, enhance first
-			if (config.llm?.enabled) {
+			// If LLM is enabled and API key provided, enhance first
+			if (config.llm?.enabled && config.llm.apiKey) {
 				const { graph: enhancedGraph, result: enhanceResult } =
 					await runEnhanceStep(
 						config.project,
 						runId,
 						parsedGraph,
-						undefined,
+						config.llm.apiKey,
 						config.llm.model,
 					)
 				if (enhanceResult.status === "failed") {
@@ -578,14 +578,14 @@ export async function runStep(
 
 			let graphToRender = parsedGraph
 
-			// If LLM is enabled, enhance first
-			if (config.llm?.enabled) {
+			// If LLM is enabled and API key provided, enhance first
+			if (config.llm?.enabled && config.llm.apiKey) {
 				const { graph: enhancedGraph, result: enhanceResult } =
 					await runEnhanceStep(
 						config.project,
 						runId,
 						parsedGraph,
-						undefined,
+						config.llm.apiKey,
 						config.llm.model,
 					)
 				if (enhanceResult.status === "failed") {

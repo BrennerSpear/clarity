@@ -1,52 +1,79 @@
 /**
- * Claude API client for LLM enhancement
+ * OpenRouter API client for LLM enhancement
  */
 
-import Anthropic from "@anthropic-ai/sdk"
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+export const DEFAULT_MODEL = "anthropic/claude-opus-4.5"
+const DEFAULT_MAX_TOKENS = 4096
 
 export interface LLMClientConfig {
-	apiKey?: string
 	model?: string
 	maxTokens?: number
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514"
-const DEFAULT_MAX_TOKENS = 4096
+interface OpenRouterMessage {
+	role: "user" | "assistant" | "system"
+	content: string
+}
 
-/**
- * Create an Anthropic client instance
- */
-export function createClient(config?: LLMClientConfig): Anthropic {
-	return new Anthropic({
-		apiKey: config?.apiKey ?? process.env.ANTHROPIC_API_KEY,
-	})
+interface OpenRouterResponse {
+	choices: Array<{
+		message: {
+			content: string
+		}
+	}>
+	error?: {
+		message: string
+	}
 }
 
 /**
- * Send a message to Claude and get a response
+ * Send a message to OpenRouter and get a response
  */
 export async function sendMessage(
-	client: Anthropic,
+	apiKey: string,
 	prompt: string,
 	config?: LLMClientConfig,
 ): Promise<string> {
-	const response = await client.messages.create({
-		model: config?.model ?? DEFAULT_MODEL,
-		max_tokens: config?.maxTokens ?? DEFAULT_MAX_TOKENS,
-		messages: [
-			{
-				role: "user",
-				content: prompt,
-			},
-		],
+	const messages: OpenRouterMessage[] = [
+		{
+			role: "user",
+			content: prompt,
+		},
+	]
+
+	const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+			"HTTP-Referer": "https://github.com/clarity-diagrams/clarity",
+			"X-Title": "Clarity Diagrams",
+		},
+		body: JSON.stringify({
+			model: config?.model ?? DEFAULT_MODEL,
+			max_tokens: config?.maxTokens ?? DEFAULT_MAX_TOKENS,
+			messages,
+		}),
 	})
 
-	const textBlock = response.content.find((block) => block.type === "text")
-	if (!textBlock || textBlock.type !== "text") {
-		throw new Error("No text response from Claude")
+	if (!response.ok) {
+		const errorText = await response.text()
+		throw new Error(`OpenRouter API error: ${response.status} ${errorText}`)
 	}
 
-	return textBlock.text
+	const data = (await response.json()) as OpenRouterResponse
+
+	if (data.error) {
+		throw new Error(`OpenRouter error: ${data.error.message}`)
+	}
+
+	const content = data.choices[0]?.message?.content
+	if (!content) {
+		throw new Error("No response content from OpenRouter")
+	}
+
+	return content
 }
 
 /**

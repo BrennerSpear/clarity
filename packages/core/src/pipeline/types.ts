@@ -13,6 +13,7 @@ export interface PipelineConfig {
 	outputDir: string
 	llm?: {
 		enabled: boolean
+		apiKey?: string
 		model?: string
 	}
 	excalidraw?: {

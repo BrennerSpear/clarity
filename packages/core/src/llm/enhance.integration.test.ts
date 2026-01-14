@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { getApiKey } from "../config"
 import type { InfraGraph } from "../graph/types"
-import { createClient, parseJsonResponse, sendMessage } from "./client"
+import { DEFAULT_MODEL, parseJsonResponse, sendMessage } from "./client"
 import {
 	type EnhancementResponse,
 	applyEnhancements,
@@ -61,14 +62,19 @@ const createTestGraph = (): InfraGraph => ({
 })
 
 describe("LLM Enhancement Integration", () => {
-	test("enhances a graph with real Claude API call", async () => {
-		const graph = createTestGraph()
-		const client = createClient()
+	test("enhances a graph with real OpenRouter API call", async () => {
+		const apiKey = getApiKey()
+		if (!apiKey) {
+			console.log("Skipping integration test: no API key configured")
+			return
+		}
 
-		// Build prompt and send to Claude
+		const graph = createTestGraph()
+
+		// Build prompt and send to OpenRouter
 		const prompt = buildEnhancePrompt(graph)
-		const response = await sendMessage(client, prompt, {
-			model: "claude-sonnet-4-20250514",
+		const response = await sendMessage(apiKey, prompt, {
+			model: DEFAULT_MODEL,
 		})
 
 		// Parse the response using our parser

@@ -18,3 +18,6 @@ export * from "./llm"
 
 // Output (PNG, Mermaid)
 export * from "./output"
+
+// Config
+export * from "./config"

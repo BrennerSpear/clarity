@@ -1,6 +1,7 @@
 import {
 	ensureRunDir,
 	generateRunId,
+	getApiKey,
 	getRunDir,
 	loadParsedGraph,
 	runEnhanceStep,
@@ -23,7 +24,7 @@ export const runCommand = new Command("run")
 		"-s, --step <step>",
 		"Run only a specific step (parse, enhance, layout, generate)",
 	)
-	.option("--no-llm", "Disable LLM enhancement")
+	.option("--no-llm", "Disable LLM enhancement even if API key is available")
 	.option("-v, --verbose", "Show detailed output")
 	.action(
 		async (
@@ -31,6 +32,10 @@ export const runCommand = new Command("run")
 			options: { step?: string; llm?: boolean; verbose?: boolean },
 		) => {
 			console.log(`Running pipeline for project: ${projectId}\n`)
+
+			// Check for API key (auto-enables LLM if available)
+			const apiKey = getApiKey()
+			const llmEnabled = options.llm !== false && !!apiKey
 
 			if (options.step) {
 				// Run single step
@@ -64,6 +69,13 @@ export const runCommand = new Command("run")
 						break
 					}
 					case "enhance": {
+						if (!apiKey) {
+							console.error(
+								"\x1b[31m✗\x1b[0m Enhance requires an API key. Run 'clarity config set-key <key>' to set one.",
+							)
+							process.exit(1)
+						}
+
 						// First parse
 						const { graph: parsedGraph, result: parseResult } =
 							await runParseStep(projectId, runId)
@@ -80,6 +92,7 @@ export const runCommand = new Command("run")
 							projectId,
 							runId,
 							parsedGraph,
+							apiKey,
 						)
 
 						if (result.status === "failed") {
@@ -113,11 +126,11 @@ export const runCommand = new Command("run")
 						}
 						console.log("\x1b[32m✓\x1b[0m Parse completed")
 
-						// Optionally enhance
+						// Optionally enhance if API key available and not disabled
 						let graphToLayout = parsedGraph
-						if (options.llm !== false) {
+						if (llmEnabled && apiKey) {
 							const { graph: enhancedGraph, result: enhanceResult } =
-								await runEnhanceStep(projectId, runId, parsedGraph)
+								await runEnhanceStep(projectId, runId, parsedGraph, apiKey)
 							if (enhanceResult.status === "failed") {
 								console.error(
 									`\x1b[31m✗\x1b[0m Enhance failed: ${enhanceResult.error}`,
@@ -126,6 +139,8 @@ export const runCommand = new Command("run")
 							}
 							console.log("\x1b[32m✓\x1b[0m Enhance completed")
 							graphToLayout = enhancedGraph
+						} else {
+							console.log("\x1b[33m-\x1b[0m Enhance skipped (no API key)")
 						}
 
 						// Then layout
@@ -158,11 +173,11 @@ export const runCommand = new Command("run")
 						}
 						console.log("\x1b[32m✓\x1b[0m Parse completed")
 
-						// Optionally enhance
+						// Optionally enhance if API key available and not disabled
 						let graphToRender = parsedGraph
-						if (options.llm !== false) {
+						if (llmEnabled && apiKey) {
 							const { graph: enhancedGraph, result: enhanceResult } =
-								await runEnhanceStep(projectId, runId, parsedGraph)
+								await runEnhanceStep(projectId, runId, parsedGraph, apiKey)
 							if (enhanceResult.status === "failed") {
 								console.error(
 									`\x1b[31m✗\x1b[0m Enhance failed: ${enhanceResult.error}`,
@@ -171,6 +186,8 @@ export const runCommand = new Command("run")
 							}
 							console.log("\x1b[32m✓\x1b[0m Enhance completed")
 							graphToRender = enhancedGraph
+						} else {
+							console.log("\x1b[33m-\x1b[0m Enhance skipped (no API key)")
 						}
 
 						// Then layout
@@ -223,7 +240,10 @@ export const runCommand = new Command("run")
 				const run = await runPipeline({
 					project: projectId,
 					outputDir: `test-data/${projectId}/runs`,
-					llm: { enabled: options.llm ?? true },
+					llm: {
+						enabled: llmEnabled,
+						apiKey: apiKey,
+					},
 				})
 
 				console.log(formatRunSummary(run))
