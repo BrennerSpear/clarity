@@ -41,6 +41,57 @@ const NODE_SIZES: Record<string, { width: number; height: number }> = {
 	proxy: { width: 100, height: 50 },
 }
 
+function parseCpuCores(value?: string): number | undefined {
+	if (!value) return undefined
+	if (value.endsWith("m")) {
+		const milli = Number.parseFloat(value.slice(0, -1))
+		return Number.isFinite(milli) ? milli / 1000 : undefined
+	}
+	const cores = Number.parseFloat(value)
+	return Number.isFinite(cores) ? cores : undefined
+}
+
+function parseMemoryMi(value?: string): number | undefined {
+	if (!value) return undefined
+	const match = value.match(/^(\d+(?:\.\d+)?)([a-zA-Z]+)?$/)
+	if (!match) return undefined
+
+	const amount = Number.parseFloat(match[1] ?? "")
+	if (!Number.isFinite(amount)) return undefined
+
+	const unit = (match[2] ?? "").toLowerCase()
+	switch (unit) {
+		case "ki":
+			return amount / 1024
+		case "mi":
+			return amount
+		case "gi":
+			return amount * 1024
+		case "ti":
+			return amount * 1024 * 1024
+		case "k":
+			return amount / 1024
+		case "m":
+			return amount
+		case "g":
+			return amount * 1024
+		default:
+			return amount
+	}
+}
+
+function getResourceScale(node: ServiceNode): number {
+	const cpu = parseCpuCores(node.resourceRequests?.cpu)
+	const memory = parseMemoryMi(node.resourceRequests?.memory)
+
+	if (cpu === undefined && memory === undefined) return 1
+
+	if ((cpu ?? 0) >= 2 || (memory ?? 0) >= 2048) return 1.4
+	if ((cpu ?? 0) >= 1 || (memory ?? 0) >= 1024) return 1.25
+	if ((cpu ?? 0) >= 0.5 || (memory ?? 0) >= 512) return 1.1
+	return 1
+}
+
 /**
  * Determine the semantic layer for a service based on its type and category
  */
@@ -127,7 +178,12 @@ export function getSemanticLayer(node: ServiceNode): SemanticLayer {
  * Get node dimensions based on service type
  */
 function getNodeSize(node: ServiceNode): { width: number; height: number } {
-	return NODE_SIZES[node.type] ?? DEFAULT_NODE_SIZE
+	const base = NODE_SIZES[node.type] ?? DEFAULT_NODE_SIZE
+	const scale = getResourceScale(node)
+	return {
+		width: Math.round(base.width * scale),
+		height: Math.round(base.height * scale),
+	}
 }
 
 /**

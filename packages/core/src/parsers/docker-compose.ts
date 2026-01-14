@@ -8,12 +8,8 @@ const yamlParseOptions = {
 	merge: true,
 }
 import { GraphBuilder } from "../graph/builder"
-import type {
-	InfraGraph,
-	PortMapping,
-	ServiceType,
-	VolumeMount,
-} from "../graph/types"
+import type { InfraGraph, PortMapping, VolumeMount } from "../graph/types"
+import { inferServiceType } from "./utils"
 
 interface DockerComposeService {
 	image?: string
@@ -32,75 +28,6 @@ interface DockerComposeFile {
 	services?: Record<string, DockerComposeService>
 	networks?: Record<string, unknown>
 	volumes?: Record<string, unknown>
-}
-
-/**
- * Infer service type from image name
- */
-function inferServiceType(serviceName: string, image?: string): ServiceType {
-	const name = (image ?? serviceName).toLowerCase()
-
-	// Databases
-	if (
-		name.includes("postgres") ||
-		name.includes("mysql") ||
-		name.includes("mariadb") ||
-		name.includes("mongo") ||
-		name.includes("clickhouse") ||
-		name.includes("cassandra") ||
-		name.includes("cockroach")
-	) {
-		return "database"
-	}
-
-	// Caches
-	if (
-		name.includes("redis") ||
-		name.includes("memcache") ||
-		name.includes("keydb") ||
-		name.includes("elasticsearch") ||
-		name.includes("opensearch")
-	) {
-		return "cache"
-	}
-
-	// Message queues
-	if (
-		name.includes("kafka") ||
-		name.includes("rabbitmq") ||
-		name.includes("nats") ||
-		name.includes("pulsar") ||
-		name.includes("zookeeper")
-	) {
-		return "queue"
-	}
-
-	// Storage
-	if (
-		name.includes("minio") ||
-		name.includes("seaweedfs") ||
-		name.includes("seaweed") ||
-		name.includes("objectstorage") ||
-		name.includes("s3") ||
-		name.includes("gcs") ||
-		name.includes("ceph")
-	) {
-		return "storage"
-	}
-
-	// Proxies
-	if (
-		name.includes("nginx") ||
-		name.includes("traefik") ||
-		name.includes("haproxy") ||
-		name.includes("envoy") ||
-		name.includes("caddy")
-	) {
-		return "proxy"
-	}
-
-	// Default to container
-	return "container"
 }
 
 /**

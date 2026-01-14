@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk"
+import { join } from "node:path"
 import { infraGraphToElk, summarizeLayers } from "../elk/convert"
 import { runLayout } from "../elk/layout"
 import type { ElkGraph } from "../elk/types"
@@ -14,9 +15,11 @@ import {
 import { graphToMermaid, graphToMermaidStyled } from "../output/mermaid"
 import { renderExcalidrawToPng } from "../output/png"
 import { parseDockerCompose } from "../parsers/docker-compose"
+import { parseHelmChart } from "../parsers/helm"
 import {
 	ensureRunDir,
 	generateRunId,
+	getSourceDir,
 	listSourceFiles,
 	readSourceFile,
 	saveElkInput,
@@ -51,30 +54,58 @@ export async function runParseStep(
 			throw new Error(`No source files found for project: ${project}`)
 		}
 
-		// For now, only handle docker-compose files
+		// Detect docker-compose files
 		const composeFiles = sourceFiles.filter(
 			(f) => f.includes("docker-compose") || f.includes("compose"),
 		)
 
-		if (composeFiles.length === 0) {
+		// Detect Helm charts (Chart.yaml)
+		const helmCharts = sourceFiles.filter((f) => /(^|\/)Chart\.ya?ml$/i.test(f))
+
+		let graph: InfraGraph
+
+		if (composeFiles.length > 0) {
+			// Parse the first compose file (TODO: merge multiple files)
+			const filename = composeFiles[0]
+			if (!filename) {
+				throw new Error("No compose file to parse")
+			}
+
+			const content = await readSourceFile(project, filename)
+			graph = parseDockerCompose(content, filename, project)
+		} else if (helmCharts.length > 0) {
+			const chartFile = helmCharts[0]
+			if (!chartFile) {
+				throw new Error("No Helm chart found")
+			}
+
+			const chartDir = chartFile.includes("/")
+				? chartFile.slice(0, chartFile.lastIndexOf("/"))
+				: "."
+			const sourceRoot = getSourceDir(project)
+			const chartPath = join(sourceRoot, chartDir)
+			graph = parseHelmChart(chartPath, project, sourceRoot)
+		} else {
 			// Try any yaml file as docker-compose
 			const yamlFiles = sourceFiles.filter(
-				(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
+				(f) =>
+					(f.endsWith(".yml") || f.endsWith(".yaml")) &&
+					!/(^|\/)Chart\.ya?ml$/i.test(f) &&
+					!/(^|\/)values\.ya?ml$/i.test(f) &&
+					!f.includes("/templates/"),
 			)
 			if (yamlFiles.length === 0) {
 				throw new Error("No docker-compose files found")
 			}
-			composeFiles.push(...yamlFiles)
-		}
 
-		// Parse the first compose file (TODO: merge multiple files)
-		const filename = composeFiles[0]
-		if (!filename) {
-			throw new Error("No compose file to parse")
-		}
+			const filename = yamlFiles[0]
+			if (!filename) {
+				throw new Error("No compose file to parse")
+			}
 
-		const content = await readSourceFile(project, filename)
-		const graph = parseDockerCompose(content, filename, project)
+			const content = await readSourceFile(project, filename)
+			graph = parseDockerCompose(content, filename, project)
+		}
 
 		const outputFiles: string[] = []
 
@@ -560,7 +591,11 @@ export async function runStep(
 				graphToLayout = enhancedGraph
 			}
 
-			const { result } = await runLayoutStep(config.project, runId, graphToLayout)
+			const { result } = await runLayoutStep(
+				config.project,
+				runId,
+				graphToLayout,
+			)
 			if (result.status === "failed") {
 				throw new Error(`Layout step failed: ${result.error}`)
 			}
@@ -604,9 +639,14 @@ export async function runStep(
 				throw new Error(`Layout step failed: ${layoutResult.error}`)
 			}
 
-			const { result } = await runGenerateStep(config.project, runId, graphToRender, {
-				elkGraph,
-			})
+			const { result } = await runGenerateStep(
+				config.project,
+				runId,
+				graphToRender,
+				{
+					elkGraph,
+				},
+			)
 			if (result.status === "failed") {
 				throw new Error(`Generate step failed: ${result.error}`)
 			}

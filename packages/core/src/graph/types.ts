@@ -15,6 +15,7 @@ export type DependencyType =
 	| "volume"
 	| "link"
 	| "inferred"
+	| "subchart"
 
 export type SourceFormat = "docker-compose" | "helm" | "terraform" | "ansible"
 
@@ -47,6 +48,12 @@ export interface ServiceNode {
 	volumes?: VolumeMount[]
 	environment?: Record<string, string | number | boolean | null>
 	replicas?: number
+	resourceRequests?: {
+		cpu?: string
+		memory?: string
+	}
+	storageSize?: string
+	external?: boolean
 
 	// LLM-enhanced (Phase 3)
 	description?: string
