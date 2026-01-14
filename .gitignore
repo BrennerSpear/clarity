@@ -36,3 +36,6 @@ coverage/
 
 # Test data
 test-data/
+
+
+.tldr/
