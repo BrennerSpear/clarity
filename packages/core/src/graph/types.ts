@@ -15,6 +15,7 @@ export type DependencyType =
 	| "volume"
 	| "link"
 	| "inferred"
+	| "subchart" // Helm subchart dependency
 
 export type SourceFormat = "docker-compose" | "helm" | "terraform" | "ansible"
 
@@ -35,6 +36,11 @@ export interface SourceInfo {
 	line?: number
 }
 
+export interface ResourceRequests {
+	cpu?: string // e.g., "500m", "2"
+	memory?: string // e.g., "256Mi", "8Gi"
+}
+
 export interface ServiceNode {
 	id: string
 	name: string
@@ -47,6 +53,11 @@ export interface ServiceNode {
 	volumes?: VolumeMount[]
 	environment?: Record<string, string | number | boolean | null>
 	replicas?: number
+
+	// Helm-specific fields
+	resourceRequests?: ResourceRequests // CPU/memory requests (indicates service size)
+	storageSize?: string // PVC size, e.g., "8Gi"
+	external?: boolean // External/managed service not deployed by chart
 
 	// LLM-enhanced (Phase 3)
 	description?: string

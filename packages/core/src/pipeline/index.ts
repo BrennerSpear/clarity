@@ -14,6 +14,7 @@ import {
 import { graphToMermaid, graphToMermaidStyled } from "../output/mermaid"
 import { renderExcalidrawToPng } from "../output/png"
 import { parseDockerCompose } from "../parsers/docker-compose"
+import { parseHelm } from "../parsers/helm"
 import {
 	ensureRunDir,
 	generateRunId,
@@ -34,6 +35,37 @@ export * from "./types"
 export * from "./storage"
 
 /**
+ * Detect source format from filenames
+ */
+type SourceFormat = "docker-compose" | "helm" | "unknown"
+
+function detectSourceFormat(files: string[]): SourceFormat {
+	// Check for Helm chart files
+	const hasChartYaml = files.some((f) => f === "Chart.yaml" || f.endsWith("/Chart.yaml"))
+	const hasValuesYaml = files.some((f) => f === "values.yaml" || f.endsWith("/values.yaml"))
+
+	if (hasChartYaml && hasValuesYaml) {
+		return "helm"
+	}
+
+	// Check for Docker Compose files
+	const hasComposeFile = files.some(
+		(f) => f.includes("docker-compose") || f.includes("compose"),
+	)
+	if (hasComposeFile) {
+		return "docker-compose"
+	}
+
+	// Default to docker-compose for yaml files
+	const hasYamlFiles = files.some((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
+	if (hasYamlFiles) {
+		return "docker-compose"
+	}
+
+	return "unknown"
+}
+
+/**
  * Run the parse step: parse all source files into an InfraGraph
  */
 export async function runParseStep(
@@ -51,30 +83,54 @@ export async function runParseStep(
 			throw new Error(`No source files found for project: ${project}`)
 		}
 
-		// For now, only handle docker-compose files
-		const composeFiles = sourceFiles.filter(
-			(f) => f.includes("docker-compose") || f.includes("compose"),
-		)
+		const format = detectSourceFormat(sourceFiles)
+		let graph: InfraGraph
 
-		if (composeFiles.length === 0) {
-			// Try any yaml file as docker-compose
-			const yamlFiles = sourceFiles.filter(
-				(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
+		if (format === "helm") {
+			// Parse Helm chart
+			const chartYamlFile = sourceFiles.find(
+				(f) => f === "Chart.yaml" || f.endsWith("/Chart.yaml"),
 			)
-			if (yamlFiles.length === 0) {
-				throw new Error("No docker-compose files found")
+			const valuesYamlFile = sourceFiles.find(
+				(f) => f === "values.yaml" || f.endsWith("/values.yaml"),
+			)
+
+			if (!chartYamlFile || !valuesYamlFile) {
+				throw new Error("Helm chart requires both Chart.yaml and values.yaml")
 			}
-			composeFiles.push(...yamlFiles)
-		}
 
-		// Parse the first compose file (TODO: merge multiple files)
-		const filename = composeFiles[0]
-		if (!filename) {
-			throw new Error("No compose file to parse")
-		}
+			const chartYaml = await readSourceFile(project, chartYamlFile)
+			const valuesYaml = await readSourceFile(project, valuesYamlFile)
 
-		const content = await readSourceFile(project, filename)
-		const graph = parseDockerCompose(content, filename, project)
+			// Use project name as chart directory for naming
+			graph = parseHelm(chartYaml, valuesYaml, project, project)
+		} else if (format === "docker-compose") {
+			// Parse Docker Compose
+			const composeFiles = sourceFiles.filter(
+				(f) => f.includes("docker-compose") || f.includes("compose"),
+			)
+
+			if (composeFiles.length === 0) {
+				// Try any yaml file as docker-compose
+				const yamlFiles = sourceFiles.filter(
+					(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
+				)
+				if (yamlFiles.length === 0) {
+					throw new Error("No docker-compose files found")
+				}
+				composeFiles.push(...yamlFiles)
+			}
+
+			const filename = composeFiles[0]
+			if (!filename) {
+				throw new Error("No compose file to parse")
+			}
+
+			const content = await readSourceFile(project, filename)
+			graph = parseDockerCompose(content, filename, project)
+		} else {
+			throw new Error("Unknown source format - no docker-compose or Helm chart files found")
+		}
 
 		const outputFiles: string[] = []
 

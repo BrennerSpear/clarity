@@ -1,4 +1,5 @@
 import { ensureProjectDirs, writeSourceFile } from "@clarity/core"
+import { $ } from "bun"
 import { Command } from "commander"
 
 interface ProjectConfig {
@@ -56,13 +57,153 @@ async function fetchFileFromGithub(
 	return response.text()
 }
 
+/**
+ * Fetch Helm chart from a Helm repository using helm CLI
+ */
+async function fetchHelmChart(
+	chartName: string,
+	repoUrl: string,
+	projectId: string,
+	version?: string,
+): Promise<void> {
+	// Add the repo temporarily
+	const repoName = `clarity-temp-${Date.now()}`
+
+	try {
+		console.log(`  Adding Helm repository ${repoUrl}...`)
+		await $`helm repo add ${repoName} ${repoUrl}`.quiet()
+		await $`helm repo update ${repoName}`.quiet()
+
+		// Pull the chart
+		const chartRef = `${repoName}/${chartName}`
+		const pullArgs = ["pull", chartRef, "--untar"]
+		if (version) {
+			pullArgs.push("--version", version)
+		}
+
+		// Create temp directory for download
+		const tempDir = `/tmp/clarity-helm-${Date.now()}`
+		await $`mkdir -p ${tempDir}`
+
+		console.log(`  Pulling ${chartName}${version ? `@${version}` : ""}...`)
+		await $`helm ${pullArgs} -d ${tempDir}`.quiet()
+
+		// Find the chart directory (helm extracts to chartName/)
+		const chartDir = `${tempDir}/${chartName}`
+
+		// Copy Chart.yaml and values.yaml to project source directory
+		const chartYaml = Bun.file(`${chartDir}/Chart.yaml`)
+		const valuesYaml = Bun.file(`${chartDir}/values.yaml`)
+
+		if (await chartYaml.exists()) {
+			const content = await chartYaml.text()
+			await writeSourceFile(projectId, "Chart.yaml", content)
+			console.log("  \x1b[32m✓\x1b[0m Saved Chart.yaml")
+		}
+
+		if (await valuesYaml.exists()) {
+			const content = await valuesYaml.text()
+			await writeSourceFile(projectId, "values.yaml", content)
+			console.log("  \x1b[32m✓\x1b[0m Saved values.yaml")
+		}
+
+		// Cleanup temp directory
+		await $`rm -rf ${tempDir}`.quiet()
+	} finally {
+		// Remove the temporary repo
+		await $`helm repo remove ${repoName}`.quiet().nothrow()
+	}
+}
+
+/**
+ * Fetch Helm chart from a local directory
+ */
+async function fetchHelmChartFromPath(
+	chartPath: string,
+	projectId: string,
+): Promise<void> {
+	const chartYaml = Bun.file(`${chartPath}/Chart.yaml`)
+	const valuesYaml = Bun.file(`${chartPath}/values.yaml`)
+
+	if (!(await chartYaml.exists())) {
+		throw new Error(`Chart.yaml not found in ${chartPath}`)
+	}
+
+	if (!(await valuesYaml.exists())) {
+		throw new Error(`values.yaml not found in ${chartPath}`)
+	}
+
+	const chartContent = await chartYaml.text()
+	const valuesContent = await valuesYaml.text()
+
+	await writeSourceFile(projectId, "Chart.yaml", chartContent)
+	console.log("  \x1b[32m✓\x1b[0m Saved Chart.yaml")
+
+	await writeSourceFile(projectId, "values.yaml", valuesContent)
+	console.log("  \x1b[32m✓\x1b[0m Saved values.yaml")
+}
+
 export const fetchCommand = new Command("fetch")
 	.description("Fetch IaC files from a repository")
 	.argument("<project>", "Project ID to fetch")
 	.option("-r, --repo <url>", "Override repository URL")
 	.option("-f, --file <path>", "Specific file path to fetch")
+	.option("-h, --helm <chart>", "Fetch Helm chart by name from repository")
+	.option("--helm-repo <url>", "Helm repository URL (default: bitnami)")
+	.option("--helm-path <path>", "Fetch Helm chart from local directory")
+	.option("--helm-version <version>", "Specific Helm chart version to fetch")
 	.action(
-		async (projectId: string, options: { repo?: string; file?: string }) => {
+		async (
+			projectId: string,
+			options: {
+				repo?: string
+				file?: string
+				helm?: string
+				helmRepo?: string
+				helmPath?: string
+				helmVersion?: string
+			},
+		) => {
+			await ensureProjectDirs(projectId)
+
+			// Handle Helm chart from local path
+			if (options.helmPath) {
+				console.log(`Fetching Helm chart from ${options.helmPath}...`)
+				try {
+					await fetchHelmChartFromPath(options.helmPath, projectId)
+					console.log("\nDone!")
+				} catch (error) {
+					console.error(
+						`\x1b[31m✗\x1b[0m Failed to fetch Helm chart: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					process.exit(1)
+				}
+				return
+			}
+
+			// Handle Helm chart from repository
+			if (options.helm) {
+				const helmRepo =
+					options.helmRepo ?? "https://charts.bitnami.com/bitnami"
+				console.log(`Fetching Helm chart ${options.helm} from ${helmRepo}...`)
+				try {
+					await fetchHelmChart(
+						options.helm,
+						helmRepo,
+						projectId,
+						options.helmVersion,
+					)
+					console.log("\nDone!")
+				} catch (error) {
+					console.error(
+						`\x1b[31m✗\x1b[0m Failed to fetch Helm chart: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					process.exit(1)
+				}
+				return
+			}
+
+			// Handle GitHub repository (existing behavior)
 			const registry = await loadProjects()
 			const project = registry.projects.find((p) => p.id === projectId)
 
@@ -78,8 +219,6 @@ export const fetchCommand = new Command("fetch")
 				console.error("No repository URL found")
 				process.exit(1)
 			}
-
-			await ensureProjectDirs(projectId)
 
 			// Determine files to fetch
 			const filesToFetch: { path: string; format: string }[] = []
