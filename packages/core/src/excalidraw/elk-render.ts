@@ -76,7 +76,7 @@ function createNodeElement(
 		backgroundColor: colors.background,
 		fillStyle: "solid",
 		strokeWidth: 2,
-		strokeStyle: "solid",
+		strokeStyle: node.external ? "dashed" : "solid",
 		roughness: 1,
 		opacity: 100,
 		groupIds: [],
@@ -153,9 +153,11 @@ function createNodeText(node: ServiceNode, elkNode: ElkNode): ExcalidrawText {
  * ELK provides absolute coordinates, Excalidraw needs relative points
  * from the arrow's start position.
  */
-function elkSectionToArrowPoints(
-	section: ElkEdgeSection,
-): { startX: number; startY: number; points: [number, number][] } {
+function elkSectionToArrowPoints(section: ElkEdgeSection): {
+	startX: number
+	startY: number
+	points: [number, number][]
+} {
 	const startX = section.startPoint.x
 	const startY = section.startPoint.y
 

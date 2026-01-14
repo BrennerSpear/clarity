@@ -38,6 +38,14 @@ export const ServiceNodeSchema = z.object({
 		.record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
 		.optional(),
 	replicas: z.number().optional(),
+	resourceRequests: z
+		.object({
+			cpu: z.string().optional(),
+			memory: z.string().optional(),
+		})
+		.optional(),
+	storageSize: z.string().optional(),
+	external: z.boolean().optional(),
 	description: z.string().optional(),
 	group: z.string().optional(),
 	queueRole: z.enum(["producer", "consumer", "both"]).optional(),
@@ -46,7 +54,14 @@ export const ServiceNodeSchema = z.object({
 export const DependencyEdgeSchema = z.object({
 	from: z.string(),
 	to: z.string(),
-	type: z.enum(["depends_on", "network", "volume", "link", "inferred"]),
+	type: z.enum([
+		"depends_on",
+		"network",
+		"volume",
+		"link",
+		"inferred",
+		"subchart",
+	]),
 	port: z.number().optional(),
 	protocol: z.string().optional(),
 })

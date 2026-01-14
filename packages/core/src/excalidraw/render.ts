@@ -9,19 +9,12 @@ import type {
 	ServiceGroup,
 } from "../graph/grouping"
 import { getEdgeDirectionColor, groupByDependencyPath } from "../graph/grouping"
-import type {
-	InfraGraph,
-	ServiceNode,
-	ServiceType,
-} from "../graph/types"
+import type { InfraGraph, ServiceNode, ServiceType } from "../graph/types"
 
 /**
  * Computed category for grouping (derived from serviceType)
  */
-type ComputedCategory =
-	| "data-layer"
-	| "application-layer"
-	| "infrastructure"
+type ComputedCategory = "data-layer" | "application-layer" | "infrastructure"
 
 /**
  * Derive a high-level category from a service type
@@ -52,7 +45,13 @@ import {
 	type SemanticPosition,
 	calculateSemanticLayout,
 } from "./semantic-layout"
-import { createGrid, findOrthogonalPath, createConnectionTracker, type ConnectionTracker, type Grid } from "./pathfinding"
+import {
+	createGrid,
+	findOrthogonalPath,
+	createConnectionTracker,
+	type ConnectionTracker,
+	type Grid,
+} from "./pathfinding"
 import {
 	type ExcalidrawArrow,
 	type ExcalidrawDiamond,
@@ -484,6 +483,8 @@ function renderServiceNode(
 		position.height,
 		colors,
 	)
+	shape.strokeStyle = node.external ? "dashed" : "solid"
+	shape.strokeStyle = node.external ? "dashed" : "solid"
 
 	// Add bound text reference
 	shape.boundElements = [{ id: textId, type: "text" }]
@@ -591,9 +592,10 @@ export function renderToExcalidraw(
 	}
 
 	// Deduplicate edges for rendering - only need one arrow per node pair
-	// Prefer explicit edges: depends_on > link > network > volume > inferred
+	// Prefer explicit edges: depends_on/subchart > link > network > volume > inferred
 	const edgePriority: Record<string, number> = {
 		depends_on: 5,
+		subchart: 5,
 		link: 4,
 		network: 3,
 		volume: 2,
@@ -816,7 +818,9 @@ export function renderGroupedToExcalidraw(
 		if (position) {
 			const shapeId = `shape-${group.id}`
 			const arrowIds = shapeArrowBindings.get(shapeId) ?? []
-			elements.push(...renderServiceGroupWithBindings(group, position, arrowIds))
+			elements.push(
+				...renderServiceGroupWithBindings(group, position, arrowIds),
+			)
 		}
 	}
 
