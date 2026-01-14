@@ -263,9 +263,33 @@ export function parseHelmChart(
 	}
 
 	const dependencyNames = chart.dependencies?.map((dep) => dep.name) ?? []
-	const components = detectComponents(values, { dependencyNames })
-	const componentMap = buildComponentMap(chart.name, components)
+	const detectedComponents = detectComponents(values, { dependencyNames })
+	const componentMap = buildComponentMap(chart.name, detectedComponents)
 	const aliasMap = buildAliasMap(values, componentMap)
+
+	const renderedInference = inferEdgesFromRenderedManifests({
+		chartDir,
+		releaseName: chart.name,
+		componentMap,
+		aliasMap,
+		valuesFiles: options?.valuesFiles,
+	})
+
+	let components = detectedComponents
+	if (renderedInference.renderedComponents.length > 0) {
+		const renderedSet = new Set(renderedInference.renderedComponents)
+		const workloadSet = new Set(renderedInference.workloadComponents)
+		const jobSet = new Set(renderedInference.jobComponents)
+
+		components = detectedComponents.filter((component) => {
+			const nodeId = `${chart.name}-${component.name}`
+			if (!renderedSet.has(nodeId)) return false
+			if (workloadSet.size > 0 && jobSet.has(nodeId) && !workloadSet.has(nodeId)) {
+				return false
+			}
+			return true
+		})
+	}
 
 	const chartConfig = extractServiceConfig(values)
 	const chartImage = chartConfig.image
@@ -356,14 +380,6 @@ export function parseHelmChart(
 			builder.addEdge(chart.name, target.id, target.edgeType)
 		}
 	}
-
-	const renderedInference = inferEdgesFromRenderedManifests({
-		chartDir,
-		releaseName: chart.name,
-		componentMap,
-		aliasMap,
-		valuesFiles: options?.valuesFiles,
-	})
 
 	for (const service of renderedInference.externalServices) {
 		if (!builder.hasNode(service.id)) {

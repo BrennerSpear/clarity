@@ -21,6 +21,14 @@ export interface ExternalService {
 	port?: number
 }
 
+export interface RenderedInferenceResult {
+	edges: RenderedEdge[]
+	externalServices: ExternalService[]
+	renderedComponents: string[]
+	workloadComponents: string[]
+	jobComponents: string[]
+}
+
 interface K8sResource {
 	kind?: string
 	metadata?: {
@@ -192,10 +200,16 @@ function inferEdgesFromTemplates(options: {
 	releaseName: string
 	componentMap: Map<string, string>
 	aliasMap: Map<string, string>
-}): { edges: RenderedEdge[]; externalServices: ExternalService[] } {
+}): RenderedInferenceResult {
 	const templates = listTemplateFiles(options.chartDir)
 	if (templates.length === 0) {
-		return { edges: [], externalServices: [] }
+		return {
+			edges: [],
+			externalServices: [],
+			renderedComponents: [],
+			workloadComponents: [],
+			jobComponents: [],
+		}
 	}
 
 	const serviceTargets = buildServiceTargets(
@@ -280,7 +294,13 @@ function inferEdgesFromTemplates(options: {
 		}
 	}
 
-	return { edges, externalServices: Array.from(externalServices.values()) }
+	return {
+		edges,
+		externalServices: Array.from(externalServices.values()),
+		renderedComponents: [],
+		workloadComponents: [],
+		jobComponents: [],
+	}
 }
 
 function parseRenderedResources(content: string): K8sResource[] {
@@ -475,7 +495,7 @@ export function inferEdgesFromRenderedManifests(options: {
 	componentMap: Map<string, string>
 	aliasMap: Map<string, string>
 	valuesFiles?: string[]
-}): { edges: RenderedEdge[]; externalServices: ExternalService[] } {
+}): RenderedInferenceResult {
 	const manifest = renderHelmTemplate(
 		options.chartDir,
 		options.releaseName,
@@ -492,6 +512,16 @@ export function inferEdgesFromRenderedManifests(options: {
 	const serviceTargets = new Map<string, string>()
 	const configMaps = new Map<string, string[]>()
 	const externalServices = new Map<string, ExternalService>()
+	const renderedComponents = new Set<string>()
+	const workloadComponents = new Set<string>()
+	const jobComponents = new Set<string>()
+	const longRunningKinds = new Set([
+		"Deployment",
+		"StatefulSet",
+		"DaemonSet",
+		"ReplicaSet",
+		"Pod",
+	])
 
 	for (const resource of resources) {
 		if (resource.kind === "ConfigMap" && resource.metadata?.name) {
@@ -517,9 +547,19 @@ export function inferEdgesFromRenderedManifests(options: {
 			resolveNodeIdFromName(resource.metadata?.name, options.componentMap, options.aliasMap)
 
 		if (!resolvedNode) continue
+		renderedComponents.add(resolvedNode)
 
 		if (resource.kind === "Service" && resource.metadata?.name) {
 			serviceTargets.set(resource.metadata.name, resolvedNode)
+			workloadComponents.add(resolvedNode)
+		}
+
+		if (resource.kind && longRunningKinds.has(resource.kind)) {
+			workloadComponents.add(resolvedNode)
+		}
+
+		if (resource.kind === "Job" || resource.kind === "CronJob") {
+			jobComponents.add(resolvedNode)
 		}
 
 		// workloads are handled in a separate pass
@@ -621,5 +661,11 @@ export function inferEdgesFromRenderedManifests(options: {
 		}
 	}
 
-	return { edges, externalServices: Array.from(externalServices.values()) }
+	return {
+		edges,
+		externalServices: Array.from(externalServices.values()),
+		renderedComponents: Array.from(renderedComponents),
+		workloadComponents: Array.from(workloadComponents),
+		jobComponents: Array.from(jobComponents),
+	}
 }
