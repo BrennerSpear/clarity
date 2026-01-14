@@ -6,6 +6,7 @@ import { inferServiceType } from "../utils"
 import type { HelmDependency } from "./chart"
 import { parseChartYaml } from "./chart"
 import { detectComponents } from "./components"
+import { inferEdgesFromRenderedManifests } from "./rendered"
 import {
 	extractServiceConfig,
 	getBoolean,
@@ -53,6 +54,51 @@ function resolveSourcePath(
 	if (!sourceRoot) return filepath
 	const rel = relative(sourceRoot, filepath)
 	return rel || filepath
+}
+
+function normalizeName(value: string): string {
+	return value
+		.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+		.replace(/_/g, "-")
+		.toLowerCase()
+}
+
+function buildComponentMap(
+	chartName: string,
+	components: Array<{ name: string }>,
+): Map<string, string> {
+	const map = new Map<string, string>()
+	for (const component of components) {
+		map.set(normalizeName(component.name), `${chartName}-${component.name}`)
+	}
+	return map
+}
+
+function hasComponentMarkers(values: HelmValues): boolean {
+	return (
+		"replicaCount" in values ||
+		"replicas" in values ||
+		"containerPorts" in values ||
+		"containerPort" in values ||
+		("service" in values && isRecord(values.service)) ||
+		"image" in values ||
+		"resources" in values
+	)
+}
+
+function buildAliasMap(values: HelmValues, componentMap: Map<string, string>): Map<string, string> {
+	const aliases = new Map<string, string>()
+
+	const serverNode = componentMap.get("server")
+	if (serverNode && isRecord(values.server)) {
+		for (const [key, value] of Object.entries(values.server)) {
+			if (!isRecord(value)) continue
+			if (!hasComponentMarkers(value)) continue
+			aliases.set(normalizeName(key), serverNode)
+		}
+	}
+
+	return aliases
 }
 
 function parseConditionPaths(condition?: string): string[] {
@@ -190,6 +236,7 @@ export function parseHelmChart(
 	chartDir: string,
 	project: string,
 	sourceRoot?: string,
+	options?: { valuesFiles?: string[] },
 ): InfraGraph {
 	const chartPath = resolveChartPath(chartDir)
 	if (!chartPath) {
@@ -217,6 +264,8 @@ export function parseHelmChart(
 
 	const dependencyNames = chart.dependencies?.map((dep) => dep.name) ?? []
 	const components = detectComponents(values, { dependencyNames })
+	const componentMap = buildComponentMap(chart.name, components)
+	const aliasMap = buildAliasMap(values, componentMap)
 
 	const chartConfig = extractServiceConfig(values)
 	const chartImage = chartConfig.image
@@ -306,6 +355,33 @@ export function parseHelmChart(
 		for (const target of dependencyTargets) {
 			builder.addEdge(chart.name, target.id, target.edgeType)
 		}
+	}
+
+	const renderedInference = inferEdgesFromRenderedManifests({
+		chartDir,
+		releaseName: chart.name,
+		componentMap,
+		aliasMap,
+		valuesFiles: options?.valuesFiles,
+	})
+
+	for (const service of renderedInference.externalServices) {
+		if (!builder.hasNode(service.id)) {
+			builder.addNode(
+				service.id,
+				service.name,
+				inferServiceType(service.name, service.name),
+				chartSource,
+				{
+					external: true,
+					ports: service.port ? [{ internal: service.port }] : undefined,
+				},
+			)
+		}
+	}
+
+	for (const edge of renderedInference.edges) {
+		builder.addEdge(edge.from, edge.to, edge.type)
 	}
 
 	return builder.build()
