@@ -2,7 +2,7 @@
 
 Generate Excalidraw architecture diagrams from Infrastructure-as-Code files.
 
-Clarity parses Docker Compose files, uses LLM enhancement to categorize services, and renders hand-drawn style architecture diagrams with automatic layout.
+Clarity parses Docker Compose and Helm charts, uses LLM enhancement to add metadata, and renders hand-drawn style architecture diagrams with automatic layout.
 
 ## Examples
 
@@ -16,8 +16,10 @@ Clarity parses Docker Compose files, uses LLM enhancement to categorize services
 
 ## Features
 
-- **Automatic parsing** - Extracts services, dependencies, volumes, and ports from Docker Compose
-- **LLM enhancement** - Categorizes services (database, cache, queue, storage, proxy, ui) and infers logical groupings
+- **Multi-format parsing** - Supports Docker Compose and Helm charts
+  - Docker Compose: services, dependencies, volumes, ports
+  - Helm: values.yaml inference, Chart.yaml dependencies, rendered manifest analysis
+- **LLM enhancement** - Adds service descriptions and logical groupings via OpenRouter API
 - **Semantic layout** - ELK.js positions services in layers (ui → api → worker → data → infrastructure)
 - **Excalidraw output** - Hand-drawn style with distinct shapes per service type:
   - Rectangles for application services
@@ -35,10 +37,13 @@ bun install
 ## Quick Start
 
 ```bash
-# Fetch a project's Docker Compose files
+# Fetch a project's IaC files (Docker Compose or Helm)
 bun run clarity fetch myproject --repo https://github.com/org/repo
 
-# Generate diagram (with LLM enhancement)
+# For Helm charts, specify the chart path
+bun run clarity fetch myproject --repo https://github.com/org/repo --helm charts/myapp
+
+# Generate diagram
 bun run clarity run myproject
 
 # View the output
@@ -73,8 +78,8 @@ clarity config set-key <key>            # Set OpenRouter API key
 
 ## Pipeline
 
-1. **Parse** - Convert Docker Compose YAML to intermediate graph representation
-2. **Enhance** - LLM categorizes services and suggests groupings
+1. **Parse** - Convert IaC files (Docker Compose or Helm) to intermediate graph
+2. **Enhance** - LLM adds service descriptions and group metadata
 3. **Layout** - ELK.js computes node positions with semantic layering
 4. **Generate** - Create Excalidraw JSON and render PNG
 
@@ -97,7 +102,7 @@ bun run format              # Auto-format code
 
 ## Roadmap
 
-- [ ] Helm chart parsing
+- [x] Helm chart parsing
 - [ ] Terraform parsing
 - [ ] Ansible playbook parsing
 - [ ] Multi-file compose merging
