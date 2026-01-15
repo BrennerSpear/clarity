@@ -278,15 +278,12 @@ export function parseHelmChart(
 	let components = detectedComponents
 	if (renderedInference.renderedComponents.length > 0) {
 		const renderedSet = new Set(renderedInference.renderedComponents)
-		const workloadSet = new Set(renderedInference.workloadComponents)
 		const jobSet = new Set(renderedInference.jobComponents)
 
 		components = detectedComponents.filter((component) => {
 			const nodeId = `${chart.name}-${component.name}`
 			if (!renderedSet.has(nodeId)) return false
-			if (workloadSet.size > 0 && jobSet.has(nodeId) && !workloadSet.has(nodeId)) {
-				return false
-			}
+			if (jobSet.has(nodeId)) return false
 			return true
 		})
 	}
