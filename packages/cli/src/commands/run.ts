@@ -3,12 +3,15 @@ import {
 	generateRunId,
 	getApiKey,
 	getRunDir,
+	listSourceFiles,
+	loadEnhancedGraph,
 	loadParsedGraph,
 	runEnhanceStep,
 	runGenerateStep,
 	runLayoutStep,
 	runParseStep,
 	runPipeline,
+	runStep,
 } from "@clarity/core"
 import { Command } from "commander"
 import {
@@ -16,6 +19,40 @@ import {
 	formatGraphSummary,
 	formatRunSummary,
 } from "../utils/output"
+
+interface HelmValuesRun {
+	runId: string
+	valuesFile: string
+}
+
+async function detectHelmValuesRuns(
+	projectId: string,
+): Promise<HelmValuesRun[]> {
+	const sourceFiles = await listSourceFiles(projectId)
+	const chartFile = sourceFiles.find((file) =>
+		/(^|\/)Chart\.ya?ml$/i.test(file),
+	)
+	if (!chartFile) return []
+
+	const chartDir = chartFile.includes("/")
+		? chartFile.slice(0, chartFile.lastIndexOf("/"))
+		: "."
+	const prefix = chartDir === "." ? "" : `${chartDir}/`
+
+	const runs: HelmValuesRun[] = []
+	for (const file of sourceFiles) {
+		if (!file.startsWith(prefix)) continue
+		const base = file.split("/").pop() ?? file
+		const match = base.match(/^values-(.+)\.ya?ml$/i)
+		if (!match) continue
+		const suffix = match[1]?.trim()
+		if (!suffix) continue
+		const runId = suffix.replace(/[^a-zA-Z0-9._-]/g, "-")
+		runs.push({ runId, valuesFile: file })
+	}
+
+	return runs.sort((a, b) => a.runId.localeCompare(b.runId))
+}
 
 export const runCommand = new Command("run")
 	.description("Run the pipeline for a project")
@@ -36,8 +73,73 @@ export const runCommand = new Command("run")
 			// Check for API key (auto-enables LLM if available)
 			const apiKey = getApiKey()
 			const llmEnabled = options.llm !== false && !!apiKey
+			const helmValuesRuns = await detectHelmValuesRuns(projectId)
 
 			if (options.step) {
+				if (helmValuesRuns.length > 0) {
+					if (options.step === "enhance" && !apiKey) {
+						console.error(
+							"\x1b[31m✗\x1b[0m Enhance requires an API key. Run 'clarity config set-key <key>' to set one.",
+						)
+						process.exit(1)
+					}
+
+					for (const run of helmValuesRuns) {
+						console.log(`Values variant: ${run.runId}`)
+						const result = await runStep(
+							{
+								project: projectId,
+								outputDir: `test-data/${projectId}/runs`,
+								llm: { enabled: llmEnabled, apiKey },
+								runId: run.runId,
+								helmValuesFiles: [run.valuesFile],
+							},
+							options.step as "parse" | "enhance" | "layout" | "generate",
+						)
+
+						if (result.status === "failed") {
+							console.error(
+								`\x1b[31m✗\x1b[0m ${options.step} failed: ${result.error}`,
+							)
+							process.exit(1)
+						}
+
+						console.log(`\x1b[32m✓\x1b[0m ${options.step} completed`)
+
+						if (options.step === "parse") {
+							const graph = await loadParsedGraph(projectId, run.runId)
+							if (graph) {
+								if (options.verbose) {
+									console.log(formatGraphSummary(graph))
+								} else {
+									console.log(`Nodes: ${graph.nodes.length}`)
+									console.log(`Edges: ${graph.edges.length}`)
+								}
+							}
+						}
+
+						if (options.step === "enhance") {
+							const graph = await loadEnhancedGraph(projectId, run.runId)
+							if (graph) {
+								if (options.verbose) {
+									console.log(formatGraphSummary(graph))
+								} else {
+									console.log(`Nodes: ${graph.nodes.length}`)
+									console.log(`Edges: ${graph.edges.length}`)
+								}
+							}
+						}
+
+						if (result.outputFile) {
+							console.log(
+								`\nOutput: ${getRunDir(projectId, run.runId)}/${result.outputFile}`,
+							)
+						}
+						console.log("")
+					}
+					return
+				}
+
 				// Run single step
 				const runId = generateRunId()
 				await ensureRunDir(projectId, runId)
@@ -236,6 +338,39 @@ export const runCommand = new Command("run")
 						process.exit(1)
 				}
 			} else {
+				if (helmValuesRuns.length > 0) {
+					let failed = false
+					for (const runInfo of helmValuesRuns) {
+						console.log(`Values variant: ${runInfo.runId}`)
+						const run = await runPipeline({
+							project: projectId,
+							outputDir: `test-data/${projectId}/runs`,
+							llm: { enabled: llmEnabled, apiKey },
+							runId: runInfo.runId,
+							helmValuesFiles: [runInfo.valuesFile],
+						})
+
+						console.log(formatRunSummary(run))
+
+						if (run.status === "completed" && options.verbose) {
+							const graph = await loadParsedGraph(projectId, run.id)
+							if (graph) {
+								console.log(`\n${formatGraphSummary(graph)}`)
+							}
+						}
+
+						if (run.status === "failed") {
+							failed = true
+						}
+						console.log("")
+					}
+
+					if (failed) {
+						process.exit(1)
+					}
+					return
+				}
+
 				// Run full pipeline
 				const run = await runPipeline({
 					project: projectId,

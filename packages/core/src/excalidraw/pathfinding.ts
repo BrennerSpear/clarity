@@ -116,7 +116,15 @@ export function createGrid(
 		}
 	}
 
-	return { cells, width, height, cellSize, offsetX: minX, offsetY: minY, arrowUsage: new Map() }
+	return {
+		cells,
+		width,
+		height,
+		cellSize,
+		offsetX: minX,
+		offsetY: minY,
+		arrowUsage: new Map(),
+	}
 }
 
 /**
@@ -174,9 +182,20 @@ function getDirection(
 /**
  * Get neighbors (orthogonal only - up, down, left, right)
  */
-function getNeighbors(grid: Grid, node: AStarNode): { x: number; y: number; direction: "up" | "down" | "left" | "right" }[] {
-	const neighbors: { x: number; y: number; direction: "up" | "down" | "left" | "right" }[] = []
-	const dirs: { dx: number; dy: number; dir: "up" | "down" | "left" | "right" }[] = [
+function getNeighbors(
+	grid: Grid,
+	node: AStarNode,
+): { x: number; y: number; direction: "up" | "down" | "left" | "right" }[] {
+	const neighbors: {
+		x: number
+		y: number
+		direction: "up" | "down" | "left" | "right"
+	}[] = []
+	const dirs: {
+		dx: number
+		dy: number
+		dir: "up" | "down" | "left" | "right"
+	}[] = [
 		{ dx: 0, dy: -1, dir: "up" },
 		{ dx: 0, dy: 1, dir: "down" },
 		{ dx: -1, dy: 0, dir: "left" },
@@ -422,7 +441,8 @@ export function markPathAsUsed(grid: Grid, path: [number, number][]): void {
 		let cy = start.gy
 
 		// Limit iterations to prevent infinite loops
-		const maxIterations = Math.abs(end.gx - start.gx) + Math.abs(end.gy - start.gy) + 10
+		const maxIterations =
+			Math.abs(end.gx - start.gx) + Math.abs(end.gy - start.gy) + 10
 		let iterations = 0
 
 		while (iterations < maxIterations) {
@@ -435,11 +455,16 @@ export function markPathAsUsed(grid: Grid, path: [number, number][]): void {
 			for (let adjDist = 1; adjDist <= 5; adjDist++) {
 				const penalty = 2 / adjDist // Stronger penalty for closer cells
 				for (const [adjX, adjY] of [
-					[cx-adjDist, cy], [cx+adjDist, cy],
-					[cx, cy-adjDist], [cx, cy+adjDist]
+					[cx - adjDist, cy],
+					[cx + adjDist, cy],
+					[cx, cy - adjDist],
+					[cx, cy + adjDist],
 				]) {
 					const adjKey = `${adjX},${adjY}`
-					grid.arrowUsage.set(adjKey, (grid.arrowUsage.get(adjKey) ?? 0) + penalty)
+					grid.arrowUsage.set(
+						adjKey,
+						(grid.arrowUsage.get(adjKey) ?? 0) + penalty,
+					)
 				}
 			}
 
@@ -534,12 +559,14 @@ function getConnectionOffset(
 
 	// Spread connections along the edge with wider spacing
 	const spacing = 25 // Wide spacing between connections
-	const maxOffset = (edge === "top" || edge === "bottom")
-		? pos.width / 2.2
-		: pos.height / 2.2
+	const maxOffset =
+		edge === "top" || edge === "bottom" ? pos.width / 2.2 : pos.height / 2.2
 
 	// Alternate sides: 0, -1, 1, -2, 2, ...
-	const offset = count === 0 ? 0 : (Math.ceil(count / 2) * (count % 2 === 0 ? -1 : 1)) * spacing
+	const offset =
+		count === 0
+			? 0
+			: Math.ceil(count / 2) * (count % 2 === 0 ? -1 : 1) * spacing
 	return Math.max(-maxOffset, Math.min(maxOffset, offset))
 }
 
@@ -623,7 +650,10 @@ export function findOrthogonalPath(
 	}
 
 	// Mark fallback path
-	const absolutePath: [number, number][] = path.map(([px, py]) => [startPoint.x + px, startPoint.y + py])
+	const absolutePath: [number, number][] = path.map(([px, py]) => [
+		startPoint.x + px,
+		startPoint.y + py,
+	])
 	markPathAsUsed(grid, absolutePath)
 
 	return { startPoint, endPoint, path }

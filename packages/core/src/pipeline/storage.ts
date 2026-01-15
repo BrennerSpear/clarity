@@ -238,7 +238,9 @@ export async function saveExcalidrawFile(
 	suffix?: string,
 ): Promise<string> {
 	const runDir = await ensureRunDir(project, runId)
-	const filename = suffix ? `diagram-${suffix}.excalidraw` : "diagram.excalidraw"
+	const filename = suffix
+		? `diagram-${suffix}.excalidraw`
+		: "diagram.excalidraw"
 	const filepath = join(runDir, filename)
 	await writeFile(filepath, JSON.stringify(excalidraw, null, 2))
 	return filename
@@ -253,7 +255,9 @@ export async function loadExcalidrawFile(
 	suffix?: string,
 ): Promise<ExcalidrawFile | null> {
 	const runDir = getRunDir(project, runId)
-	const filename = suffix ? `diagram-${suffix}.excalidraw` : "diagram.excalidraw"
+	const filename = suffix
+		? `diagram-${suffix}.excalidraw`
+		: "diagram.excalidraw"
 	const filepath = join(runDir, filename)
 	try {
 		const content = await readFile(filepath, "utf-8")
@@ -335,10 +339,27 @@ export async function writeSourceFile(
 export async function listSourceFiles(project: string): Promise<string[]> {
 	const sourceDir = getSourceDir(project)
 	try {
-		const entries = await readdir(sourceDir)
-		return entries.filter(
-			(f) => f.endsWith(".yml") || f.endsWith(".yaml") || f.endsWith(".json"),
-		)
+		const results: string[] = []
+		const walk = async (dir: string, prefix: string): Promise<void> => {
+			const entries = await readdir(dir, { withFileTypes: true })
+			for (const entry of entries) {
+				const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+				if (entry.isDirectory()) {
+					await walk(join(dir, entry.name), relativePath)
+					continue
+				}
+				if (
+					relativePath.endsWith(".yml") ||
+					relativePath.endsWith(".yaml") ||
+					relativePath.endsWith(".json")
+				) {
+					results.push(relativePath)
+				}
+			}
+		}
+
+		await walk(sourceDir, "")
+		return results
 	} catch {
 		return []
 	}
@@ -415,4 +436,3 @@ export async function loadMermaidFile(
 		return null
 	}
 }
-

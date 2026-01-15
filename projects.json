@@ -13,6 +13,12 @@
 			"files": [{ "path": "docker-compose.yml", "format": "docker-compose" }]
 		},
 		{
+			"id": "temporal-helm",
+			"name": "Temporal (Helm)",
+			"repo": "https://go.temporal.io/helm-charts",
+			"files": []
+		},
+		{
 			"id": "mastodon",
 			"name": "Mastodon",
 			"repo": "https://github.com/mastodon/mastodon",
@@ -40,7 +46,12 @@
 			"id": "nextcloud",
 			"name": "Nextcloud",
 			"repo": "https://github.com/nextcloud/docker",
-			"files": [{ "path": ".examples/docker-compose/insecure/mariadb/apache/docker-compose.yml", "format": "docker-compose" }]
+			"files": [
+				{
+					"path": ".examples/docker-compose/insecure/mariadb/apache/docker-compose.yml",
+					"format": "docker-compose"
+				}
+			]
 		},
 		{
 			"id": "outline",
@@ -52,7 +63,9 @@
 			"id": "posthog",
 			"name": "PostHog",
 			"repo": "https://github.com/PostHog/posthog",
-			"files": [{ "path": "docker-compose.hobby.yml", "format": "docker-compose" }]
+			"files": [
+				{ "path": "docker-compose.hobby.yml", "format": "docker-compose" }
+			]
 		}
 	]
 }

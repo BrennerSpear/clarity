@@ -119,8 +119,12 @@ export function graphToMermaidStyled(graph: InfraGraph): string {
 
 	for (const node of graph.nodes) {
 		const styleClass = getStyleClass(node.type)
-		if (styleClass) {
-			styleLines.push(`  class ${node.id} ${styleClass}`)
+		if (styleClass || node.external) {
+			const classes = [
+				styleClass,
+				node.external ? "external" : undefined,
+			].filter(Boolean)
+			styleLines.push(`  class ${node.id} ${classes.join(" ")}`)
 		}
 	}
 
@@ -134,6 +138,7 @@ export function graphToMermaidStyled(graph: InfraGraph): string {
 		lines.push("  classDef storage fill:#b2f2bb,stroke:#2f9e44")
 		lines.push("  classDef proxy fill:#ffc9c9,stroke:#e03131")
 		lines.push("  classDef ui fill:#99e9f2,stroke:#0c8599")
+		lines.push("  classDef external stroke-dasharray: 5 5")
 		lines.push("")
 		lines.push(...styleLines)
 	}
