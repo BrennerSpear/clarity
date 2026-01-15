@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Clarity generates Excalidraw architecture diagrams from Infrastructure-as-Code files. It parses Docker Compose, Helm, Terraform, and Ansible configurations into an intermediate graph representation, enhances them with LLM categorization, and renders multi-resolution Excalidraw diagrams.
+Clarity generates Excalidraw architecture diagrams from Infrastructure-as-Code files. Parses Docker Compose and Helm charts into an intermediate graph representation, optionally enhances with LLM metadata, and renders hand-drawn style Excalidraw diagrams.
 
 ## Commands
 
@@ -39,7 +39,13 @@ bun run clarity fetch <project> --repo <url>   # Download IaC files
 bun run clarity list                            # List configured projects
 bun run clarity run <project> [--step <name>]  # Execute pipeline
 bun run clarity inspect <project> --run <id>   # View previous run
+bun run clarity config set-key <key>           # Set OpenRouter API key
+bun run clarity config show                    # Show current config
 ```
+
+### Configuration
+
+API key can be set via CLI (`clarity config set-key`) or environment variable `OPENROUTER_API_KEY`. Config stored at `~/.config/clarity/config.json`.
 
 ## Architecture
 
@@ -47,11 +53,10 @@ bun run clarity inspect <project> --run <id>   # View previous run
 
 The pipeline (packages/core/src/pipeline/index.ts) runs these steps in sequence:
 
-1. **parse** - Converts IaC files to `InfraGraph` (docker-compose parser in parsers/)
-2. **enhance** - Uses Claude API to categorize services and infer groupings
+1. **parse** - Converts IaC files to `InfraGraph` (Docker Compose and Helm parsers)
+2. **enhance** - Uses OpenRouter API to add service descriptions and group metadata
 3. **layout** - Runs ELK layout algorithm to compute node positions
 4. **generate** - Creates Excalidraw JSON and renders PNG via Puppeteer
-5. **validate** - Uses Claude Vision to validate PNG renders (optional)
 
 Each step saves outputs to `test-data/<project>/runs/<runId>/` with numbered prefixes.
 
@@ -84,14 +89,15 @@ The rendering system (packages/core/src/excalidraw/):
 ```
 packages/
 ├── core/          # Pipeline logic, parsers, LLM client, Excalidraw generation
-│   ├── parsers/   # docker-compose parser (helm, terraform, ansible planned)
-│   ├── graph/     # InfraGraph types, Zod schemas, grouping logic
+│   ├── parsers/   # IaC parsers (docker-compose.ts, helm/)
+│   ├── graph/     # InfraGraph types, Zod schemas
 │   ├── pipeline/  # Orchestration and run storage
-│   ├── llm/       # Claude API client and enhancement prompts
+│   ├── config/    # API key management (~/.config/clarity/)
+│   ├── llm/       # OpenRouter client and enhancement prompts
 │   ├── elk/       # ELK layout conversion and execution
-│   ├── excalidraw/# JSON generation, layout, PNG rendering
+│   ├── excalidraw/# Excalidraw JSON generation, PNG rendering
 │   └── output/    # PNG (Puppeteer) and Mermaid debug output
-└── cli/           # Commander.js CLI with fetch, run, list, inspect commands
+└── cli/           # Commander.js CLI (fetch, run, list, inspect, config)
 ```
 
 ### Run Storage
@@ -102,7 +108,6 @@ Pipeline runs stored in timestamped directories under `test-data/<project>/runs/
 - `02-enhanced.json` - Graph after LLM enhancement
 - `03-elk-input.json` / `03-elk-output.json` - ELK layout data
 - `diagram.excalidraw` / `diagram.png` - Final outputs
-- `04-validation-*.json` - Vision QA results
 
 ## Code Style
 
