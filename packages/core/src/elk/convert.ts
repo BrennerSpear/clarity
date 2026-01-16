@@ -96,7 +96,20 @@ function getResourceScale(node: ServiceNode): number {
  * Determine the semantic layer for a service based on its type and category
  */
 export function getSemanticLayer(node: ServiceNode): SemanticLayer {
-	// Type-based rules (highest priority)
+	const nameLower = node.name.toLowerCase()
+
+	// Standalone dashboards are entry points (check before type-based rules)
+	// These are directly user-accessible UIs, not behind a proxy
+	if (
+		nameLower.endsWith("-ui") ||
+		nameLower === "grafana" ||
+		nameLower === "kibana" ||
+		nameLower === "prometheus"
+	) {
+		return "entry"
+	}
+
+	// Type-based rules
 	switch (node.type) {
 		case "proxy":
 			return "entry"
@@ -112,7 +125,6 @@ export function getSemanticLayer(node: ServiceNode): SemanticLayer {
 	}
 
 	// Name-based heuristics for common patterns
-	const nameLower = node.name.toLowerCase()
 
 	// Entry points (proxies, load balancers)
 	if (
@@ -120,17 +132,15 @@ export function getSemanticLayer(node: ServiceNode): SemanticLayer {
 		nameLower.includes("haproxy") ||
 		nameLower.includes("traefik") ||
 		nameLower.includes("ingress") ||
-		nameLower.includes("caddy")
+		nameLower.includes("caddy") ||
+		nameLower.includes("proxy")
 	) {
 		return "entry"
 	}
 
-	// UI layer (web frontends, dashboards)
+	// UI layer (frontends served behind a proxy)
 	if (
-		nameLower === "web" ||
 		nameLower.includes("frontend") ||
-		nameLower.includes("dashboard") ||
-		nameLower.includes("ui") ||
 		nameLower.includes("client") ||
 		nameLower.includes("app")
 	) {
@@ -253,17 +263,18 @@ export function infraGraphToElk(
 		nodeTypeMap.set(node.id, node.type)
 	}
 
-	// Identify cache nodes
-	const cacheNodes = new Set<string>()
-	for (const node of graph.nodes) {
-		if (node.type === "cache") {
-			cacheNodes.add(node.id)
+	// Track which nodes need ports for directional connections
+	// Key: nodeId, Value: { east: portIds[], west: portIds[], north: portIds[], south: portIds[] }
+	const nodePorts = new Map<
+		string,
+		{ east: string[]; west: string[]; north: string[]; south: string[] }
+	>()
+	const ensureNodePorts = (nodeId: string) => {
+		if (!nodePorts.has(nodeId)) {
+			nodePorts.set(nodeId, { east: [], west: [], north: [], south: [] })
 		}
+		return nodePorts.get(nodeId)!
 	}
-
-	// Track which nodes need ports for cache connections
-	// Key: nodeId, Value: { south: portIds[], north: portIds[] }
-	const nodePorts = new Map<string, { south: string[]; north: string[] }>()
 
 	// Assign layers to all nodes
 	const layerAssignments = new Map<string, SemanticLayer>()
@@ -271,26 +282,20 @@ export function infraGraphToElk(
 		layerAssignments.set(node.id, getSemanticLayer(node))
 	}
 
-	// Convert edges, adding port references for cache connections
+	// Convert edges, adding port references for directional flow
 	const edges: ElkEdge[] = graph.edges.map((edge, index) => {
 		const edgeId = `e${index}`
-		const targetIsCache = cacheNodes.has(edge.to)
 
-		if (targetIsCache) {
-			// Source needs a SOUTH port, target (cache) needs a NORTH port
+		const sourceLayer = layerAssignments.get(edge.from) ?? "api"
+		const targetLayer = layerAssignments.get(edge.to) ?? "api"
+		const sourcePartition = LAYER_PARTITIONS[sourceLayer]
+		const targetPartition = LAYER_PARTITIONS[targetLayer]
+		if (sourcePartition === targetPartition) {
 			const sourcePortId = `${edge.from}-south-${index}`
 			const targetPortId = `${edge.to}-north-${index}`
 
-			// Track ports for each node
-			if (!nodePorts.has(edge.from)) {
-				nodePorts.set(edge.from, { south: [], north: [] })
-			}
-			nodePorts.get(edge.from)!.south.push(sourcePortId)
-
-			if (!nodePorts.has(edge.to)) {
-				nodePorts.set(edge.to, { south: [], north: [] })
-			}
-			nodePorts.get(edge.to)!.north.push(targetPortId)
+			ensureNodePorts(edge.from).south.push(sourcePortId)
+			ensureNodePorts(edge.to).north.push(targetPortId)
 
 			return {
 				id: edgeId,
@@ -299,11 +304,24 @@ export function infraGraphToElk(
 			}
 		}
 
-		// Regular edge (no port constraints)
+		const flowsRight = sourcePartition < targetPartition
+		const sourceSide = flowsRight ? "east" : "west"
+		const targetSide = flowsRight ? "west" : "east"
+		const sourcePortId = `${edge.from}-${sourceSide}-${index}`
+		const targetPortId = `${edge.to}-${targetSide}-${index}`
+
+		if (flowsRight) {
+			ensureNodePorts(edge.from).east.push(sourcePortId)
+			ensureNodePorts(edge.to).west.push(targetPortId)
+		} else {
+			ensureNodePorts(edge.from).west.push(sourcePortId)
+			ensureNodePorts(edge.to).east.push(targetPortId)
+		}
+
 		return {
 			id: edgeId,
-			sources: [edge.from],
-			targets: [edge.to],
+			sources: [sourcePortId],
+			targets: [targetPortId],
 		}
 	})
 
@@ -312,24 +330,40 @@ export function infraGraphToElk(
 		const layer = layerAssignments.get(node.id) ?? "api"
 		const elkNode = convertNode(node, layer, enablePartitioning)
 
-		// Add ports if this node has cache connections
+		// Add ports if this node has directional connections
 		const ports = nodePorts.get(node.id)
 		if (ports) {
 			const elkPorts: ElkPort[] = []
 
-			// Add SOUTH ports (for outgoing edges to caches)
-			for (const portId of ports.south) {
+			// Add EAST ports (outgoing)
+			for (const portId of ports.east) {
 				elkPorts.push({
 					id: portId,
-					layoutOptions: { "elk.port.side": "SOUTH" },
+					layoutOptions: { "elk.port.side": "EAST" },
 				})
 			}
 
-			// Add NORTH ports (for incoming edges from containers)
+			// Add WEST ports (incoming)
+			for (const portId of ports.west) {
+				elkPorts.push({
+					id: portId,
+					layoutOptions: { "elk.port.side": "WEST" },
+				})
+			}
+
+			// Add NORTH ports (incoming for same-lane)
 			for (const portId of ports.north) {
 				elkPorts.push({
 					id: portId,
 					layoutOptions: { "elk.port.side": "NORTH" },
+				})
+			}
+
+			// Add SOUTH ports (outgoing for same-lane)
+			for (const portId of ports.south) {
+				elkPorts.push({
+					id: portId,
+					layoutOptions: { "elk.port.side": "SOUTH" },
 				})
 			}
 

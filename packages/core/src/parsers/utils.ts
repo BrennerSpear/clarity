@@ -64,7 +64,8 @@ export function inferServiceType(
 		name.includes("traefik") ||
 		name.includes("haproxy") ||
 		name.includes("envoy") ||
-		name.includes("caddy")
+		name.includes("caddy") ||
+		name.includes("proxy")
 	) {
 		return "proxy"
 	}

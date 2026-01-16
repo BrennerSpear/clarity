@@ -227,6 +227,7 @@ function createArrowElement(
 	targetPortOrNodeId: string,
 	sections: ElkEdgeSection[],
 	elkNodeMap: Map<string, ElkNode>,
+	edgeType?: string,
 ): ExcalidrawArrow | null {
 	if (!sections || sections.length === 0) {
 		return null
@@ -266,7 +267,7 @@ function createArrowElement(
 		backgroundColor: "transparent",
 		fillStyle: "solid",
 		strokeWidth: 2,
-		strokeStyle: "solid",
+		strokeStyle: edgeType === "inferred" ? "dashed" : "solid",
 		roughness: 1,
 		opacity: 100,
 		groupIds: [],
@@ -335,6 +336,10 @@ export function renderWithElkLayout(
 ): ExcalidrawFile {
 	const padding = options.padding ?? 50
 	const elements: ExcalidrawElement[] = []
+	const edgeTypeById = new Map<string, string>()
+	for (const [index, edge] of graph.edges.entries()) {
+		edgeTypeById.set(`e${index}`, edge.type)
+	}
 
 	// Build lookup map for ELK nodes
 	const elkNodeMap = buildElkNodeMap(elkGraph)
@@ -395,6 +400,7 @@ export function renderWithElkLayout(
 				targetId,
 				offsetSections ?? [],
 				offsetElkNodeMap,
+				edgeTypeById.get(edge.id),
 			)
 
 			if (arrow) {
