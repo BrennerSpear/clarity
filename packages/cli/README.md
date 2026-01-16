@@ -60,6 +60,7 @@ iac-diagrams [path] [options]
 - `-o, --output <dir>` - Output directory (default: `./docs/diagrams`)
 - `--no-llm` - Disable LLM enhancement
 - `--no-png` - Skip PNG rendering (output .excalidraw only)
+- `--artifacts` - Save parsed/enhanced/elk JSON artifacts alongside outputs
 - `-v, --verbose` - Show detailed output
 
 **Examples:**
@@ -118,6 +119,16 @@ docs/diagrams/
 └── docker-compose.png         # Rendered PNG image
 ```
 
+With `--artifacts`, additional JSON files are saved:
+
+```
+docs/diagrams/
+├── docker-compose.parsed.json      # Parsed InfraGraph
+├── docker-compose.enhanced.json    # Enhanced InfraGraph (LLM if enabled)
+├── docker-compose.elk-input.json   # ELK input graph
+└── docker-compose.elk-output.json  # ELK output graph (with positions)
+```
+
 The `.excalidraw` file can be opened at [excalidraw.com](https://excalidraw.com) for editing.
 
 ## Supported Formats
@@ -162,6 +173,12 @@ iac-diagrams config show
 ```
 
 The key should start with `sk-or-`.
+
+## Appendix: Diagram Conventions
+
+- Shapes: rectangles for application services, ellipses for databases/caches, diamonds for message queues
+- Colors: blue=database, red=cache, green=storage, yellow=queue
+- Layering: UI -> API -> worker -> data -> infrastructure
 
 ## License
 

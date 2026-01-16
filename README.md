@@ -1,109 +1,185 @@
-# Clarity
+# @clarity-tools/cli
 
-Generate Excalidraw architecture diagrams from Infrastructure-as-Code files.
+Generate beautiful, hand-drawn style architecture diagrams from your Infrastructure-as-Code files.
 
-Clarity parses Docker Compose and Helm charts, uses LLM enhancement to add metadata, and renders hand-drawn style architecture diagrams with automatic layout.
+[![npm version](https://img.shields.io/npm/v/@clarity-tools/cli.svg)](https://www.npmjs.com/package/@clarity-tools/cli)
 
 ## Examples
 
 ### Temporal
 
-![Temporal architecture](docs/images/temporal.png)
+![Temporal architecture](https://raw.githubusercontent.com/BrennerSpear/clarity/main/docs/images/temporal.png)
 
 ### Mastodon
 
-![Mastodon architecture](docs/images/mastodon.png)
+![Mastodon architecture](https://raw.githubusercontent.com/BrennerSpear/clarity/main/docs/images/mastodon.png)
 
 ## Features
 
-- **Multi-format parsing** - Supports Docker Compose and Helm charts
-  - Docker Compose: services, dependencies, volumes, ports
-  - Helm: values.yaml inference, Chart.yaml dependencies, rendered manifest analysis
-- **LLM enhancement** - Adds service descriptions and logical groupings via OpenRouter API
-- **Semantic layout** - ELK.js positions services in layers (ui → api → worker → data → infrastructure)
-- **Excalidraw output** - Hand-drawn style with distinct shapes per service type:
-  - Rectangles for application services
-  - Ellipses for databases and caches
-  - Diamonds for message queues
-  - Color coding by category (blue=database, red=cache, green=storage, yellow=queue)
-- **PNG rendering** - Headless Puppeteer export for sharing
+- **Auto-detection**: Finds docker-compose.yml, compose.yml, and Helm charts
+- **Smart layout**: Semantic grouping with ELK.js layout engine
+- **LLM enhancement**: Optional AI-powered service descriptions (via OpenRouter)
+- **Excalidraw output**: Hand-drawn style diagrams you can edit
+- **PNG export**: High-quality rendered images
 
 ## Installation
 
 ```bash
-bun install
+npm install -g @clarity-tools/cli
 ```
+
+**Requirements:**
+- Node.js 18+
+- Chromium (auto-downloaded by Puppeteer on first run)
 
 ## Quick Start
 
 ```bash
-# Fetch a project's IaC files (Docker Compose or Helm)
-bun run clarity fetch myproject --repo https://github.com/org/repo
+# Run in a directory with docker-compose.yml or Helm chart
+cd my-project
+iac-diagrams
 
-# For Helm charts, specify the chart path
-bun run clarity fetch myproject --repo https://github.com/org/repo --helm charts/myapp
+# Or specify a file/directory
+iac-diagrams ./docker-compose.yml
+iac-diagrams ./charts/my-app/
 
-# Generate diagram
-bun run clarity run myproject
+# Output goes to ./docs/diagrams/ by default
+open docs/diagrams/docker-compose.png
+```
 
-# View the output
-open test-data/myproject/runs/*/diagram.png
+## Usage
+
+```bash
+iac-diagrams [path] [options]
+```
+
+**Arguments:**
+- `path` - File or directory to process (default: current directory)
+
+**Options:**
+- `-o, --output <dir>` - Output directory (default: `./docs/diagrams`)
+- `--no-llm` - Disable LLM enhancement
+- `--no-png` - Skip PNG rendering (output .excalidraw only)
+- `--artifacts` - Save parsed/enhanced/elk JSON artifacts alongside outputs
+- `-v, --verbose` - Show detailed output
+
+**Examples:**
+```bash
+# Process current directory
+iac-diagrams
+
+# Process specific file
+iac-diagrams docker-compose.yml
+
+# Process Helm chart directory
+iac-diagrams ./charts/my-app/
+
+# Custom output directory
+iac-diagrams -o ./architecture/
+
+# Skip LLM and PNG (fast mode)
+iac-diagrams --no-llm --no-png
+
+# Verbose output
+iac-diagrams -v
 ```
 
 ## Configuration
 
-Set your OpenRouter API key for LLM enhancement:
+### LLM Enhancement
+
+The tool can use OpenRouter's LLM API to:
+- Generate service descriptions
+- Suggest logical groupings
+- Add category metadata
+
+To enable, set your OpenRouter API key:
 
 ```bash
-# Via CLI (stored in ~/.config/clarity/config.json)
-bun run clarity config set-key <your-openrouter-api-key>
+# Set via CLI
+iac-diagrams config set-key sk-or-...
 
 # Or via environment variable
-export OPENROUTER_API_KEY=<your-key>
+export OPENROUTER_API_KEY=sk-or-...
+
+# View current config
+iac-diagrams config show
+
+# Clear API key
+iac-diagrams config clear-key
 ```
 
-Without an API key, diagrams are generated with basic parsing only (no service categorization or grouping).
+## Output
 
-## CLI Commands
+Files are saved to the output directory (default `./docs/diagrams/`):
 
+```
+docs/diagrams/
+├── docker-compose.excalidraw  # Excalidraw JSON (open at excalidraw.com)
+└── docker-compose.png         # Rendered PNG image
+```
+
+With `--artifacts`, additional JSON files are saved:
+
+```
+docs/diagrams/
+├── docker-compose.parsed.json      # Parsed InfraGraph
+├── docker-compose.enhanced.json    # Enhanced InfraGraph (LLM if enabled)
+├── docker-compose.elk-input.json   # ELK input graph
+└── docker-compose.elk-output.json  # ELK output graph (with positions)
+```
+
+The `.excalidraw` file can be opened at [excalidraw.com](https://excalidraw.com) for editing.
+
+## Supported Formats
+
+| Format | Status | Notes |
+|--------|--------|-------|
+| Docker Compose | ✅ | docker-compose.yml, compose.yml |
+| Helm Charts | ✅ | Detects Chart.yaml in directories |
+| Kubernetes YAML | 🔜 | Coming soon |
+| Terraform | 🔜 | Coming soon |
+
+## Troubleshooting
+
+### Browser not available
+
+If you see "Browser not available for PNG rendering", Puppeteer couldn't launch Chromium.
+
+**Fix:**
 ```bash
-clarity fetch <project> --repo <url>   # Download IaC files from a repo
-clarity list                            # List configured projects
-clarity run <project>                   # Run full pipeline
-clarity run <project> --step parse      # Run single step
-clarity inspect <project> --run <id>    # View previous run details
-clarity config show                     # Show current configuration
-clarity config set-key <key>            # Set OpenRouter API key
+# Install Chrome for Puppeteer
+npx puppeteer browsers install chrome
+
+# Or use your system Chrome
+export PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+# Or skip PNG generation
+iac-diagrams --no-png
 ```
 
-## Pipeline
+### No IaC files found
 
-1. **Parse** - Convert IaC files (Docker Compose or Helm) to intermediate graph
-2. **Enhance** - LLM adds service descriptions and group metadata
-3. **Layout** - ELK.js computes node positions with semantic layering
-4. **Generate** - Create Excalidraw JSON and render PNG
+The tool looks for:
+- `docker-compose.yml`, `docker-compose.yaml`
+- `compose.yml`, `compose.yaml`
+- Directories containing `Chart.yaml` (Helm charts)
 
-Outputs saved to `test-data/<project>/runs/<timestamp>/`:
+### API key not working
 
-- `01-parsed.json` - Raw parsed graph
-- `02-enhanced.json` - Graph with LLM enhancements
-- `03-elk-input.json` / `03-elk-output.json` - Layout data
-- `diagram.excalidraw` - Excalidraw file (open in excalidraw.com)
-- `diagram.png` - Rendered image
-
-## Development
-
+Ensure your OpenRouter API key is valid:
 ```bash
-bun test                    # Run all tests
-bun test --grep "enhance"   # Run tests matching pattern
-bun run lint                # Check code style
-bun run format              # Auto-format code
+iac-diagrams config show
 ```
 
-## Roadmap
+The key should start with `sk-or-`.
 
-- [x] Helm chart parsing
-- [ ] Terraform parsing
-- [ ] Ansible playbook parsing
-- [ ] Multi-file compose merging
-- [ ] Interactive diagram editing
+## Appendix: Diagram Conventions
+
+- Shapes: rectangles for application services, ellipses for databases/caches, diamonds for message queues
+- Colors: blue=database, red=cache, green=storage, yellow=queue
+- Layering: UI -> API -> worker -> data -> infrastructure
+
+## License
+
+MIT

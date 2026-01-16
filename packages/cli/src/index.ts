@@ -16,6 +16,10 @@ const program = new Command()
 	.option("-o, --output <dir>", "Output directory", "./docs/diagrams")
 	.option("--no-llm", "Disable LLM enhancement")
 	.option("--no-png", "Skip PNG rendering (output .excalidraw only)")
+	.option(
+		"--artifacts",
+		"Save parsed/enhanced/elk JSON artifacts alongside outputs",
+	)
 	.option("-v, --verbose", "Show detailed output")
 	.action(
 		async (
@@ -24,6 +28,7 @@ const program = new Command()
 				output?: string
 				llm?: boolean
 				png?: boolean
+				artifacts?: boolean
 				verbose?: boolean
 			},
 		) => {

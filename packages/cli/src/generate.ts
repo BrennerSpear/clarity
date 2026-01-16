@@ -25,6 +25,7 @@ export interface GenerateOptions {
 	output?: string
 	llm?: boolean
 	png?: boolean
+	artifacts?: boolean
 	verbose?: boolean
 }
 
@@ -144,6 +145,7 @@ export async function generate(
 	const verbose = options.verbose ?? false
 	const skipPng = options.png === false
 	const skipLlm = options.llm === false
+	const saveArtifacts = options.artifacts ?? false
 
 	// Check browser availability if we need PNG
 	if (!skipPng) {
@@ -210,14 +212,23 @@ export async function generate(
 	// Process each detected file
 	for (const file of detected) {
 		console.log(`\nGenerating diagram for: ${file.name}`)
+		const baseName = file.name.replace(/\.(yml|yaml)$/i, "")
+		const writeArtifact = async (suffix: string, data: unknown) => {
+			if (!saveArtifacts) return
+			const artifactPath = join(outputDir, `${baseName}.${suffix}.json`)
+			await writeFile(artifactPath, JSON.stringify(data, null, 2))
+			console.log(`  \x1b[32m✓\x1b[0m Saved: ${artifactPath}`)
+		}
 
 		// 1. Parse
 		if (verbose) console.log("  Step 1: Parsing...")
-		let graph = await parseIaC(file, verbose)
+		const parsedGraph = await parseIaC(file, verbose)
+		let graph = parsedGraph
 		if (verbose) {
 			console.log(`    Found ${graph.nodes.length} services`)
 			console.log(`    Found ${graph.edges.length} dependencies`)
 		}
+		await writeArtifact("parsed", parsedGraph)
 
 		// 2. Enhance (optional)
 		if (llmEnabled && apiKey) {
@@ -232,18 +243,20 @@ export async function generate(
 		} else if (verbose) {
 			console.log("  Step 2: Skipping LLM enhancement")
 		}
+		await writeArtifact("enhanced", graph)
 
 		// 3. Layout
 		if (verbose) console.log("  Step 3: Computing layout...")
 		const elkConversion = infraGraphToElk(graph)
 		const elkLayoutResult = await runLayout(elkConversion.graph)
+		await writeArtifact("elk-input", elkConversion.graph)
+		await writeArtifact("elk-output", elkLayoutResult.graph)
 
 		// 4. Generate Excalidraw
 		if (verbose) console.log("  Step 4: Generating Excalidraw...")
 		const excalidraw = renderWithElkLayout(graph, elkLayoutResult.graph)
 
 		// 5. Save outputs
-		const baseName = file.name.replace(/\.(yml|yaml)$/i, "")
 		const excalidrawPath = join(outputDir, `${baseName}.excalidraw`)
 		await writeFile(excalidrawPath, JSON.stringify(excalidraw, null, 2))
 		console.log(`  \x1b[32m✓\x1b[0m Saved: ${excalidrawPath}`)
