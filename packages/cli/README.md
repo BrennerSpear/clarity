@@ -138,7 +138,7 @@ The `.excalidraw` file can be opened at [excalidraw.com](https://excalidraw.com)
 | Docker Compose | ✅ | docker-compose.yml, compose.yml |
 | Helm Charts | ✅ | Detects Chart.yaml in directories |
 | Kubernetes YAML | 🔜 | Coming soon |
-| Terraform | 🔜 | Coming soon |
+| Terraform | ✅ | .tf and .tf.json module roots |
 
 ## Troubleshooting
 
@@ -164,6 +164,7 @@ The tool looks for:
 - `docker-compose.yml`, `docker-compose.yaml`
 - `compose.yml`, `compose.yaml`
 - Directories containing `Chart.yaml` (Helm charts)
+- Terraform modules containing `.tf` or `.tf.json`
 
 ### API key not working
 

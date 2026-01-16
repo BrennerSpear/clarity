@@ -15,6 +15,7 @@ import { graphToMermaid, graphToMermaidStyled } from "../output/mermaid"
 import { renderExcalidrawToPng } from "../output/png"
 import { parseDockerCompose } from "../parsers/docker-compose"
 import { parseHelmChart } from "../parsers/helm"
+import { parseTerraformFiles } from "../parsers/terraform"
 import {
 	ensureRunDir,
 	generateRunId,
@@ -60,6 +61,16 @@ export async function runParseStep(
 
 		// Detect Helm charts (Chart.yaml)
 		const helmCharts = sourceFiles.filter((f) => /(^|\/)Chart\.ya?ml$/i.test(f))
+		const terraformFiles = sourceFiles.filter((f) => {
+			const lower = f.toLowerCase()
+			if (lower.endsWith(".tf")) {
+				return !lower.includes(".tfvars")
+			}
+			if (lower.endsWith(".tf.json")) {
+				return !lower.includes(".tfvars")
+			}
+			return false
+		})
 
 		let graph: InfraGraph
 
@@ -90,6 +101,14 @@ export async function runParseStep(
 			graph = parseHelmChart(chartPath, project, sourceRoot, {
 				valuesFiles: resolvedValuesFiles,
 			})
+		} else if (terraformFiles.length > 0) {
+			const parsedFiles = await Promise.all(
+				terraformFiles.map(async (filename) => ({
+					path: filename,
+					content: await readSourceFile(project, filename),
+				})),
+			)
+			graph = parseTerraformFiles(parsedFiles, project)
 		} else {
 			// Try any yaml file as docker-compose
 			const yamlFiles = sourceFiles.filter(
