@@ -1,4 +1,5 @@
 export * from "./types"
 export * from "./schema"
 export * from "./grouping"
+export * from "./filter"
 export { GraphBuilder } from "./builder"

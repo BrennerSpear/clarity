@@ -7,9 +7,11 @@ import { basename, join, resolve } from "node:path"
 import {
 	type EnhancementResponse,
 	type InfraGraph,
+	type ServiceNode,
 	applyEnhancements,
 	buildEnhancePrompt,
 	checkBrowserAvailability,
+	filterOrphanNodes,
 	getApiKey,
 	infraGraphToElk,
 	parseDockerCompose,
@@ -134,6 +136,38 @@ async function enhanceGraph(
 }
 
 /**
+ * Generate markdown content for the excluded nodes notes file
+ */
+function generateNotesContent(orphans: ServiceNode[]): string {
+	const lines = [
+		"# Excluded Nodes",
+		"",
+		"The following nodes were found in the source file but excluded from the diagram because they have no connections to other services.",
+		"",
+		"This may indicate:",
+		"- Services that are standalone/isolated",
+		"- Missing dependency declarations in the source file",
+		"- Init containers or one-off jobs",
+		"",
+		"## Excluded Services",
+		"",
+	]
+
+	for (const node of orphans) {
+		lines.push(`### ${node.name}`)
+		lines.push("")
+		if (node.image) {
+			lines.push(`- **Image:** \`${node.image}\``)
+		}
+		lines.push(`- **Type:** ${node.type}`)
+		lines.push(`- **Source:** ${node.source.file}`)
+		lines.push("")
+	}
+
+	return lines.join("\n")
+}
+
+/**
  * Main generate function
  */
 export async function generate(
@@ -223,11 +257,26 @@ export async function generate(
 		// 1. Parse
 		if (verbose) console.log("  Step 1: Parsing...")
 		const parsedGraph = await parseIaC(file, verbose)
-		let graph = parsedGraph
+
+		// Filter out orphan nodes (nodes with no edges)
+		const { graph: filteredGraph, orphans } = filterOrphanNodes(parsedGraph)
+		let graph = filteredGraph
+
 		if (verbose) {
-			console.log(`    Found ${graph.nodes.length} services`)
+			console.log(`    Found ${parsedGraph.nodes.length} services`)
 			console.log(`    Found ${graph.edges.length} dependencies`)
 		}
+
+		// Log orphan warnings
+		if (orphans.length > 0) {
+			console.log(
+				`  \x1b[33m!\x1b[0m Excluded ${orphans.length} orphan node(s) with no connections:`,
+			)
+			for (const orphan of orphans) {
+				console.log(`    - ${orphan.name}`)
+			}
+		}
+
 		await writeArtifact("parsed", parsedGraph)
 
 		// 2. Enhance (optional)
@@ -268,6 +317,14 @@ export async function generate(
 			const pngPath = join(outputDir, `${baseName}.png`)
 			await writeFile(pngPath, pngBuffer)
 			console.log(`  \x1b[32m✓\x1b[0m Saved: ${pngPath}`)
+		}
+
+		// 7. Write notes file if there were orphans
+		if (orphans.length > 0) {
+			const notesContent = generateNotesContent(orphans)
+			const notesPath = join(outputDir, `${baseName}.excluded.md`)
+			await writeFile(notesPath, notesContent)
+			console.log(`  \x1b[32m✓\x1b[0m Saved: ${notesPath}`)
 		}
 	}
 
