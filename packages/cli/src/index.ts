@@ -20,6 +20,10 @@ const program = new Command()
 		"--artifacts",
 		"Save parsed/enhanced/elk JSON artifacts alongside outputs",
 	)
+	.option(
+		"--values <files...>",
+		"Additional Helm values files to merge (for Helm charts)",
+	)
 	.option("-v, --verbose", "Show detailed output")
 	.action(
 		async (
@@ -29,6 +33,7 @@ const program = new Command()
 				llm?: boolean
 				png?: boolean
 				artifacts?: boolean
+				values?: string[]
 				verbose?: boolean
 			},
 		) => {

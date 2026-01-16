@@ -61,6 +61,7 @@ iac-diagrams [path] [options]
 - `--no-llm` - Disable LLM enhancement
 - `--no-png` - Skip PNG rendering (output .excalidraw only)
 - `--artifacts` - Save parsed/enhanced/elk JSON artifacts alongside outputs
+- `--values <files...>` - Additional Helm values files to merge (for Helm charts)
 - `-v, --verbose` - Show detailed output
 
 **Examples:**
@@ -79,6 +80,9 @@ iac-diagrams -o ./architecture/
 
 # Skip LLM and PNG (fast mode)
 iac-diagrams --no-llm --no-png
+
+# Helm chart with custom values files
+iac-diagrams ./charts/my-app/ --values values-prod.yaml values-secrets.yaml
 
 # Verbose output
 iac-diagrams -v

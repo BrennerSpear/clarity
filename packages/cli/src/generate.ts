@@ -31,6 +31,7 @@ export interface GenerateOptions {
 	llm?: boolean
 	png?: boolean
 	artifacts?: boolean
+	values?: string[]
 	verbose?: boolean
 }
 
@@ -108,8 +109,10 @@ async function detectIaCFiles(dirPath: string): Promise<DetectedFile[]> {
  */
 async function parseIaC(
 	detected: DetectedFile,
-	verbose?: boolean,
+	options?: { verbose?: boolean; valuesFiles?: string[] },
 ): Promise<InfraGraph> {
+	const verbose = options?.verbose
+
 	if (detected.type === "docker-compose") {
 		if (verbose) console.log(`  Parsing Docker Compose: ${detected.path}`)
 		const content = await readFile(detected.path, "utf-8")
@@ -118,7 +121,25 @@ async function parseIaC(
 
 	if (detected.type === "helm") {
 		if (verbose) console.log(`  Parsing Helm chart: ${detected.path}`)
-		return parseHelmChart(detected.path, detected.name, detected.path)
+		if (verbose && options?.valuesFiles?.length) {
+			console.log(`    With values files: ${options.valuesFiles.join(", ")}`)
+		}
+		return parseHelmChart(detected.path, detected.name, detected.path, {
+			valuesFiles: options?.valuesFiles,
+		})
+	}
+
+	if (detected.type === "terraform") {
+		if (verbose) console.log(`  Parsing Terraform: ${detected.path}`)
+		const stats = await stat(detected.path)
+		if (stats.isFile()) {
+			const content = await readFile(detected.path, "utf-8")
+			return parseTerraformFiles(
+				[{ path: detected.name, content }],
+				detected.name,
+			)
+		}
+		return parseTerraformModule(detected.path, detected.name)
 	}
 
 	if (detected.type === "terraform") {
@@ -204,6 +225,7 @@ export async function generate(
 	const skipPng = options.png === false
 	const skipLlm = options.llm === false
 	const saveArtifacts = options.artifacts ?? false
+	const valuesFiles = options.values?.map((f) => resolve(f))
 
 	// Check browser availability if we need PNG
 	if (!skipPng) {
@@ -290,7 +312,7 @@ export async function generate(
 
 		// 1. Parse
 		if (verbose) console.log("  Step 1: Parsing...")
-		const parsedGraph = await parseIaC(file, verbose)
+		const parsedGraph = await parseIaC(file, { verbose, valuesFiles })
 
 		// Filter out orphan nodes (nodes with no edges)
 		const { graph: filteredGraph, orphans } = filterOrphanNodes(parsedGraph)
