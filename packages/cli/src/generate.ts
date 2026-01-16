@@ -1,0 +1,262 @@
+/**
+ * Main generate command - parses IaC files and generates diagrams
+ */
+
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
+import { basename, join, resolve } from "node:path"
+import {
+	type EnhancementResponse,
+	type InfraGraph,
+	applyEnhancements,
+	buildEnhancePrompt,
+	checkBrowserAvailability,
+	getApiKey,
+	infraGraphToElk,
+	parseDockerCompose,
+	parseHelmChart,
+	parseJsonResponse,
+	renderExcalidrawToPng,
+	renderWithElkLayout,
+	runLayout,
+	sendMessage,
+} from "@clarity-tools/core"
+
+export interface GenerateOptions {
+	output?: string
+	llm?: boolean
+	png?: boolean
+	verbose?: boolean
+}
+
+interface DetectedFile {
+	type: "docker-compose" | "helm"
+	path: string
+	name: string
+}
+
+/**
+ * Detect IaC files in a directory
+ */
+async function detectIaCFiles(dirPath: string): Promise<DetectedFile[]> {
+	const files: DetectedFile[] = []
+	const entries = await readdir(dirPath, { withFileTypes: true })
+
+	for (const entry of entries) {
+		const fullPath = join(dirPath, entry.name)
+
+		if (entry.isFile()) {
+			const name = entry.name.toLowerCase()
+			if (
+				name.includes("docker-compose") ||
+				name === "compose.yml" ||
+				name === "compose.yaml"
+			) {
+				files.push({ type: "docker-compose", path: fullPath, name: entry.name })
+			}
+		}
+
+		if (entry.isDirectory()) {
+			// Check for Helm chart
+			const chartPath = join(fullPath, "Chart.yaml")
+			try {
+				await stat(chartPath)
+				files.push({ type: "helm", path: fullPath, name: entry.name })
+			} catch {
+				// Also check for Chart.yml
+				try {
+					await stat(join(fullPath, "Chart.yml"))
+					files.push({ type: "helm", path: fullPath, name: entry.name })
+				} catch {
+					// Not a Helm chart
+				}
+			}
+		}
+	}
+
+	// Also check if current directory is a Helm chart
+	try {
+		await stat(join(dirPath, "Chart.yaml"))
+		files.push({ type: "helm", path: dirPath, name: basename(dirPath) })
+	} catch {
+		try {
+			await stat(join(dirPath, "Chart.yml"))
+			files.push({ type: "helm", path: dirPath, name: basename(dirPath) })
+		} catch {
+			// Not a Helm chart
+		}
+	}
+
+	return files
+}
+
+/**
+ * Parse a single IaC file/directory into an InfraGraph
+ */
+async function parseIaC(
+	detected: DetectedFile,
+	verbose?: boolean,
+): Promise<InfraGraph> {
+	if (detected.type === "docker-compose") {
+		if (verbose) console.log(`  Parsing Docker Compose: ${detected.path}`)
+		const content = await readFile(detected.path, "utf-8")
+		return parseDockerCompose(content, detected.name, detected.name)
+	}
+
+	if (detected.type === "helm") {
+		if (verbose) console.log(`  Parsing Helm chart: ${detected.path}`)
+		return parseHelmChart(detected.path, detected.name, detected.path)
+	}
+
+	throw new Error(`Unknown IaC type: ${detected.type}`)
+}
+
+/**
+ * Enhance graph with LLM metadata
+ */
+async function enhanceGraph(
+	graph: InfraGraph,
+	apiKey: string,
+	verbose?: boolean,
+): Promise<InfraGraph> {
+	if (verbose) console.log("  Enhancing with LLM...")
+
+	const prompt = buildEnhancePrompt(graph)
+	const response = await sendMessage(apiKey, prompt)
+	const enhancements = parseJsonResponse<EnhancementResponse>(response)
+
+	if (!enhancements?.services) {
+		if (verbose) console.log("  Warning: No enhancements returned from LLM")
+		return graph
+	}
+
+	return applyEnhancements(graph, enhancements)
+}
+
+/**
+ * Main generate function
+ */
+export async function generate(
+	inputPath: string,
+	options: GenerateOptions = {},
+): Promise<void> {
+	const resolvedInput = resolve(inputPath)
+	const outputDir = resolve(options.output ?? "./docs/diagrams")
+	const verbose = options.verbose ?? false
+	const skipPng = options.png === false
+	const skipLlm = options.llm === false
+
+	// Check browser availability if we need PNG
+	if (!skipPng) {
+		const browserCheck = await checkBrowserAvailability()
+		if (!browserCheck.available) {
+			console.error(
+				"\x1b[31m✗\x1b[0m Browser not available for PNG rendering\n",
+			)
+			console.error(browserCheck.error)
+			console.error("\nUse --no-png to skip PNG generation")
+			process.exit(1)
+		}
+	}
+
+	// Detect what we're working with
+	const inputStat = await stat(resolvedInput)
+	let detected: DetectedFile[]
+
+	if (inputStat.isFile()) {
+		// Direct file input
+		const name = basename(resolvedInput).toLowerCase()
+		if (
+			name.includes("docker-compose") ||
+			name === "compose.yml" ||
+			name === "compose.yaml"
+		) {
+			detected = [
+				{
+					type: "docker-compose",
+					path: resolvedInput,
+					name: basename(resolvedInput),
+				},
+			]
+		} else {
+			console.error(`\x1b[31m✗\x1b[0m Unrecognized file type: ${resolvedInput}`)
+			console.error("Supported: docker-compose.yml, compose.yml")
+			process.exit(1)
+		}
+	} else if (inputStat.isDirectory()) {
+		// Detect files in directory
+		detected = await detectIaCFiles(resolvedInput)
+		if (detected.length === 0) {
+			console.error(`\x1b[31m✗\x1b[0m No IaC files found in: ${resolvedInput}`)
+			console.error("Looking for: docker-compose.yml, compose.yml, Chart.yaml")
+			process.exit(1)
+		}
+	} else {
+		console.error(`\x1b[31m✗\x1b[0m Invalid path: ${resolvedInput}`)
+		process.exit(1)
+	}
+
+	// Ensure output directory exists
+	await mkdir(outputDir, { recursive: true })
+
+	// Get API key for LLM enhancement
+	const apiKey = getApiKey()
+	const llmEnabled = !skipLlm && !!apiKey
+
+	if (!skipLlm && !apiKey && verbose) {
+		console.log("  Note: No API key configured, skipping LLM enhancement")
+		console.log("  Run: iac-diagrams config set-key <your-openrouter-key>")
+	}
+
+	// Process each detected file
+	for (const file of detected) {
+		console.log(`\nGenerating diagram for: ${file.name}`)
+
+		// 1. Parse
+		if (verbose) console.log("  Step 1: Parsing...")
+		let graph = await parseIaC(file, verbose)
+		if (verbose) {
+			console.log(`    Found ${graph.nodes.length} services`)
+			console.log(`    Found ${graph.edges.length} dependencies`)
+		}
+
+		// 2. Enhance (optional)
+		if (llmEnabled && apiKey) {
+			if (verbose) console.log("  Step 2: Enhancing with LLM...")
+			try {
+				graph = await enhanceGraph(graph, apiKey, verbose)
+			} catch (err) {
+				console.error(
+					`  \x1b[33m!\x1b[0m LLM enhancement failed: ${err instanceof Error ? err.message : String(err)}`,
+				)
+			}
+		} else if (verbose) {
+			console.log("  Step 2: Skipping LLM enhancement")
+		}
+
+		// 3. Layout
+		if (verbose) console.log("  Step 3: Computing layout...")
+		const elkConversion = infraGraphToElk(graph)
+		const elkLayoutResult = await runLayout(elkConversion.graph)
+
+		// 4. Generate Excalidraw
+		if (verbose) console.log("  Step 4: Generating Excalidraw...")
+		const excalidraw = renderWithElkLayout(graph, elkLayoutResult.graph)
+
+		// 5. Save outputs
+		const baseName = file.name.replace(/\.(yml|yaml)$/i, "")
+		const excalidrawPath = join(outputDir, `${baseName}.excalidraw`)
+		await writeFile(excalidrawPath, JSON.stringify(excalidraw, null, 2))
+		console.log(`  \x1b[32m✓\x1b[0m Saved: ${excalidrawPath}`)
+
+		// 6. Render PNG (optional)
+		if (!skipPng) {
+			if (verbose) console.log("  Step 5: Rendering PNG...")
+			const pngBuffer = await renderExcalidrawToPng(excalidraw)
+			const pngPath = join(outputDir, `${baseName}.png`)
+			await writeFile(pngPath, pngBuffer)
+			console.log(`  \x1b[32m✓\x1b[0m Saved: ${pngPath}`)
+		}
+	}
+
+	console.log("\n\x1b[32m✓\x1b[0m Done!")
+}

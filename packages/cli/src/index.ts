@@ -1,20 +1,36 @@
-#!/usr/bin/env bun
 import { Command } from "commander"
 import { configCommand } from "./commands/config"
-import { fetchCommand } from "./commands/fetch"
-import { inspectCommand } from "./commands/inspect"
-import { listCommand } from "./commands/list"
-import { runCommand } from "./commands/run"
+import { generate } from "./generate"
 
 const program = new Command()
-	.name("clarity")
-	.description("Clarity - Generate architecture diagrams from IaC files")
+	.name("iac-diagrams")
+	.description(
+		"Generate architecture diagrams from Infrastructure-as-Code files",
+	)
 	.version("0.1.0")
+	.argument(
+		"[path]",
+		"File or directory to process (default: current directory)",
+		".",
+	)
+	.option("-o, --output <dir>", "Output directory", "./docs/diagrams")
+	.option("--no-llm", "Disable LLM enhancement")
+	.option("--no-png", "Skip PNG rendering (output .excalidraw only)")
+	.option("-v, --verbose", "Show detailed output")
+	.action(
+		async (
+			path: string,
+			options: {
+				output?: string
+				llm?: boolean
+				png?: boolean
+				verbose?: boolean
+			},
+		) => {
+			await generate(path, options)
+		},
+	)
 
 program.addCommand(configCommand)
-program.addCommand(fetchCommand)
-program.addCommand(runCommand)
-program.addCommand(listCommand)
-program.addCommand(inspectCommand)
 
 program.parse()

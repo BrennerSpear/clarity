@@ -86,7 +86,10 @@ function hasComponentMarkers(values: HelmValues): boolean {
 	)
 }
 
-function buildAliasMap(values: HelmValues, componentMap: Map<string, string>): Map<string, string> {
+function buildAliasMap(
+	values: HelmValues,
+	componentMap: Map<string, string>,
+): Map<string, string> {
 	const aliases = new Map<string, string>()
 
 	const serverNode = componentMap.get("server")

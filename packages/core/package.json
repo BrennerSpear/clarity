@@ -1,5 +1,5 @@
 {
-	"name": "@clarity/core",
+	"name": "@clarity-tools/core",
 	"version": "0.1.0",
 	"main": "./src/index.ts",
 	"dependencies": {

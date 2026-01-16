@@ -7,6 +7,64 @@
 
 import type { ExcalidrawFile } from "../excalidraw/types"
 
+export interface BrowserCheckResult {
+	available: boolean
+	error?: string
+	browserPath?: string
+}
+
+/**
+ * Check if Puppeteer can launch a browser for PNG rendering.
+ * Returns availability status and helpful error messages if not available.
+ */
+export async function checkBrowserAvailability(): Promise<BrowserCheckResult> {
+	try {
+		const puppeteer = await import("puppeteer")
+		const browser = await puppeteer.default.launch({
+			headless: true,
+			args: ["--no-sandbox", "--disable-setuid-sandbox"],
+		})
+		const executablePath = browser.process()?.spawnfile
+		await browser.close()
+		return {
+			available: true,
+			browserPath: executablePath,
+		}
+	} catch (err) {
+		const error = err instanceof Error ? err.message : String(err)
+
+		// Provide helpful error messages based on common issues
+		if (error.includes("Could not find Chromium") || error.includes("ENOENT")) {
+			return {
+				available: false,
+				error: `Chromium not found. Puppeteer should auto-download it on first run.
+
+If download failed, try:
+  1. Run: npx puppeteer browsers install chrome
+  2. Or set PUPPETEER_EXECUTABLE_PATH to your Chrome/Chromium installation
+
+On macOS: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+On Linux: /usr/bin/chromium-browser or /usr/bin/google-chrome`,
+			}
+		}
+
+		if (error.includes("EACCES") || error.includes("permission")) {
+			return {
+				available: false,
+				error: `Permission error launching browser.
+
+Try running with appropriate permissions or set PUPPETEER_EXECUTABLE_PATH
+to a browser you have access to.`,
+			}
+		}
+
+		return {
+			available: false,
+			error: `Failed to launch browser: ${error}`,
+		}
+	}
+}
+
 export interface PngRenderOptions {
 	width?: number
 	height?: number

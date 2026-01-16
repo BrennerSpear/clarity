@@ -37,5 +37,8 @@ coverage/
 # Test data
 test-data/
 
+# Generated diagrams
+docs/diagrams/
+
 
 .tldr/

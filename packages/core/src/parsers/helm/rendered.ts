@@ -82,15 +82,11 @@ function renderHelmTemplate(
 			args.push("--show-only", showOnly)
 		}
 
-		return execFileSync(
-			"helm",
-			args,
-			{
-				encoding: "utf-8",
-				maxBuffer: 20 * 1024 * 1024,
-				stdio: ["ignore", "pipe", "pipe"],
-			},
-		)
+		return execFileSync("helm", args, {
+			encoding: "utf-8",
+			maxBuffer: 20 * 1024 * 1024,
+			stdio: ["ignore", "pipe", "pipe"],
+		})
 	} catch {
 		return null
 	}
@@ -266,7 +262,10 @@ function inferEdgesFromTemplates(options: {
 					continue
 				}
 
-				if (serviceTargets.has(hostBase) || serviceTargets.has(normalizedHost)) {
+				if (
+					serviceTargets.has(hostBase) ||
+					serviceTargets.has(normalizedHost)
+				) {
 					const targetNode =
 						serviceTargets.get(hostBase) ?? serviceTargets.get(normalizedHost)
 					if (!targetNode || sourceNode === targetNode) continue
@@ -423,7 +422,9 @@ function collectStringsFromPodSpec(
 		}
 
 		if (Array.isArray(container.args)) {
-			values.push(...container.args.filter((value) => typeof value === "string"))
+			values.push(
+				...container.args.filter((value) => typeof value === "string"),
+			)
 		}
 
 		if (Array.isArray(container.command)) {
@@ -451,8 +452,7 @@ function valueIncludesService(value: string, serviceName: string): boolean {
 		"i",
 	)
 	return (
-		normalizedValue.includes(normalizedService) &&
-		pattern.test(normalizedValue)
+		normalizedValue.includes(normalizedService) && pattern.test(normalizedValue)
 	)
 }
 
@@ -544,7 +544,11 @@ export function inferEdgesFromRenderedManifests(options: {
 				options.componentMap,
 				options.aliasMap,
 			) ??
-			resolveNodeIdFromName(resource.metadata?.name, options.componentMap, options.aliasMap)
+			resolveNodeIdFromName(
+				resource.metadata?.name,
+				options.componentMap,
+				options.aliasMap,
+			)
 
 		if (!resolvedNode) continue
 		renderedComponents.add(resolvedNode)
@@ -596,7 +600,11 @@ export function inferEdgesFromRenderedManifests(options: {
 				options.componentMap,
 				options.aliasMap,
 			) ??
-			resolveNodeIdFromName(resource.metadata?.name, options.componentMap, options.aliasMap)
+			resolveNodeIdFromName(
+				resource.metadata?.name,
+				options.componentMap,
+				options.aliasMap,
+			)
 
 		if (!sourceNode) continue
 
@@ -635,7 +643,8 @@ export function inferEdgesFromRenderedManifests(options: {
 				}
 
 				if (serviceNames.has(hostBase) || serviceNames.has(normalizedHost)) {
-					const targetNode = serviceTargets.get(hostBase) ?? serviceTargets.get(normalizedHost)
+					const targetNode =
+						serviceTargets.get(hostBase) ?? serviceTargets.get(normalizedHost)
 					if (!targetNode || sourceNode === targetNode) continue
 					const key = `${sourceNode}->${targetNode}`
 					if (edgeKeys.has(key)) continue
