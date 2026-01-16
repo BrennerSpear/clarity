@@ -340,6 +340,20 @@ export async function listSourceFiles(project: string): Promise<string[]> {
 	const sourceDir = getSourceDir(project)
 	try {
 		const results: string[] = []
+		const isSourceFile = (relativePath: string): boolean => {
+			const lower = relativePath.toLowerCase()
+			if (lower.endsWith(".tf")) {
+				return !lower.includes(".tfvars")
+			}
+			if (lower.endsWith(".tf.json")) {
+				return !lower.includes(".tfvars")
+			}
+			return (
+				lower.endsWith(".yml") ||
+				lower.endsWith(".yaml") ||
+				lower.endsWith(".json")
+			)
+		}
 		const walk = async (dir: string, prefix: string): Promise<void> => {
 			const entries = await readdir(dir, { withFileTypes: true })
 			for (const entry of entries) {
@@ -348,11 +362,7 @@ export async function listSourceFiles(project: string): Promise<string[]> {
 					await walk(join(dir, entry.name), relativePath)
 					continue
 				}
-				if (
-					relativePath.endsWith(".yml") ||
-					relativePath.endsWith(".yaml") ||
-					relativePath.endsWith(".json")
-				) {
+				if (isSourceFile(relativePath)) {
 					results.push(relativePath)
 				}
 			}

@@ -16,6 +16,9 @@ import {
 	infraGraphToElk,
 	parseDockerCompose,
 	parseHelmChart,
+	parseTerraformFiles,
+	parseTerraformModule,
+	isTerraformPath,
 	parseJsonResponse,
 	renderExcalidrawToPng,
 	renderWithElkLayout,
@@ -32,7 +35,7 @@ export interface GenerateOptions {
 }
 
 interface DetectedFile {
-	type: "docker-compose" | "helm"
+	type: "docker-compose" | "helm" | "terraform"
 	path: string
 	name: string
 }
@@ -43,6 +46,7 @@ interface DetectedFile {
 async function detectIaCFiles(dirPath: string): Promise<DetectedFile[]> {
 	const files: DetectedFile[] = []
 	const entries = await readdir(dirPath, { withFileTypes: true })
+	let hasTerraform = false
 
 	for (const entry of entries) {
 		const fullPath = join(dirPath, entry.name)
@@ -55,6 +59,9 @@ async function detectIaCFiles(dirPath: string): Promise<DetectedFile[]> {
 				name === "compose.yaml"
 			) {
 				files.push({ type: "docker-compose", path: fullPath, name: entry.name })
+			}
+			if (isTerraformPath(entry.name)) {
+				hasTerraform = true
 			}
 		}
 
@@ -89,6 +96,10 @@ async function detectIaCFiles(dirPath: string): Promise<DetectedFile[]> {
 		}
 	}
 
+	if (hasTerraform) {
+		files.push({ type: "terraform", path: dirPath, name: basename(dirPath) })
+	}
+
 	return files
 }
 
@@ -108,6 +119,19 @@ async function parseIaC(
 	if (detected.type === "helm") {
 		if (verbose) console.log(`  Parsing Helm chart: ${detected.path}`)
 		return parseHelmChart(detected.path, detected.name, detected.path)
+	}
+
+	if (detected.type === "terraform") {
+		if (verbose) console.log(`  Parsing Terraform: ${detected.path}`)
+		const stats = await stat(detected.path)
+		if (stats.isFile()) {
+			const content = await readFile(detected.path, "utf-8")
+			return parseTerraformFiles(
+				[{ path: detected.name, content }],
+				detected.name,
+			)
+		}
+		return parseTerraformModule(detected.path, detected.name)
 	}
 
 	throw new Error(`Unknown IaC type: ${detected.type}`)
@@ -213,9 +237,17 @@ export async function generate(
 					name: basename(resolvedInput),
 				},
 			]
+		} else if (isTerraformPath(name)) {
+			detected = [
+				{
+					type: "terraform",
+					path: resolvedInput,
+					name: basename(resolvedInput),
+				},
+			]
 		} else {
 			console.error(`\x1b[31m✗\x1b[0m Unrecognized file type: ${resolvedInput}`)
-			console.error("Supported: docker-compose.yml, compose.yml")
+			console.error("Supported: docker-compose.yml, compose.yml, *.tf, *.tf.json")
 			process.exit(1)
 		}
 	} else if (inputStat.isDirectory()) {
@@ -223,7 +255,9 @@ export async function generate(
 		detected = await detectIaCFiles(resolvedInput)
 		if (detected.length === 0) {
 			console.error(`\x1b[31m✗\x1b[0m No IaC files found in: ${resolvedInput}`)
-			console.error("Looking for: docker-compose.yml, compose.yml, Chart.yaml")
+			console.error(
+				"Looking for: docker-compose.yml, compose.yml, Chart.yaml, *.tf, *.tf.json",
+			)
 			process.exit(1)
 		}
 	} else {

@@ -16,6 +16,8 @@ export type DependencyType =
 	| "link"
 	| "inferred"
 	| "subchart"
+	| "database"
+	| "cache"
 
 export type SourceFormat = "docker-compose" | "helm" | "terraform" | "ansible"
 
