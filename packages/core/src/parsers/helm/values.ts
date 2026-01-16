@@ -235,3 +235,229 @@ export function extractServiceConfig(values: HelmValues): ServiceValuesConfig {
 		storageSize: extractStorageSize(values),
 	}
 }
+
+// Connection-related keys that may contain service addresses
+const CONNECTION_KEYS = new Set([
+	"connectaddr",
+	"host",
+	"hostname",
+	"address",
+	"addr",
+	"endpoint",
+	"url",
+	"uri",
+	"server",
+	"target",
+])
+
+
+export interface ValuesExternalService {
+	id: string
+	name: string
+	port?: number
+	serviceType: string // e.g., "postgres", "elasticsearch"
+}
+
+/**
+ * Parse a Kubernetes DNS address and extract service name and port
+ * Formats:
+ *   - service.namespace.svc.cluster.local:port
+ *   - service.namespace.svc:port
+ *   - service:port
+ *   - service.namespace.svc.cluster.local (no port)
+ */
+function parseK8sAddress(
+	address: string,
+): { serviceName: string; port?: number } | null {
+	const trimmed = address.trim()
+	if (!trimmed) return null
+
+	// Skip localhost and IP addresses
+	if (
+		trimmed.startsWith("localhost") ||
+		/^\d{1,3}(\.\d{1,3}){3}/.test(trimmed)
+	) {
+		return null
+	}
+
+	// Extract port if present
+	let host = trimmed
+	let port: number | undefined
+
+	const portMatch = trimmed.match(/:(\d+)$/)
+	if (portMatch?.[1]) {
+		port = Number.parseInt(portMatch[1], 10)
+		host = trimmed.slice(0, -portMatch[0].length)
+	}
+
+	// Parse Kubernetes DNS patterns
+	// Full: service.namespace.svc.cluster.local
+	// Partial: service.namespace.svc
+	// Short: service.namespace or just service
+	const parts = host.split(".")
+
+	// Filter out cluster.local and svc suffixes
+	const filteredParts = parts.filter(
+		(part) => !["svc", "cluster", "local"].includes(part.toLowerCase()),
+	)
+
+	if (filteredParts.length === 0) return null
+
+	// First part is always the service name
+	const serviceName = filteredParts[0]
+	if (!serviceName || serviceName.length < 2) return null
+
+	// Skip if looks like a generic hostname pattern
+	if (/^\d+$/.test(serviceName)) return null
+
+	return { serviceName, port }
+}
+
+/**
+ * Infer service type from context path and service name
+ */
+function inferServiceTypeFromContext(
+	path: string[],
+	serviceName: string,
+): string {
+	const pathStr = path.join(".").toLowerCase()
+	const nameLower = serviceName.toLowerCase()
+
+	// Check path for datastore hints
+	if (
+		pathStr.includes("postgres") ||
+		pathStr.includes("postgresql") ||
+		nameLower.includes("postgres")
+	) {
+		return "postgres"
+	}
+	if (pathStr.includes("mysql") || nameLower.includes("mysql")) {
+		return "mysql"
+	}
+	if (pathStr.includes("cassandra") || nameLower.includes("cassandra")) {
+		return "cassandra"
+	}
+	if (
+		pathStr.includes("elasticsearch") ||
+		pathStr.includes("opensearch") ||
+		nameLower.includes("elasticsearch") ||
+		nameLower.includes("opensearch")
+	) {
+		return "elasticsearch"
+	}
+	if (
+		pathStr.includes("redis") ||
+		nameLower.includes("redis") ||
+		nameLower.includes("cache")
+	) {
+		return "redis"
+	}
+	if (pathStr.includes("kafka") || nameLower.includes("kafka")) {
+		return "kafka"
+	}
+	if (pathStr.includes("rabbitmq") || nameLower.includes("rabbit")) {
+		return "rabbitmq"
+	}
+	if (
+		pathStr.includes("mongo") ||
+		nameLower.includes("mongo") ||
+		nameLower.includes("mongodb")
+	) {
+		return "mongodb"
+	}
+	if (
+		pathStr.includes("memcached") ||
+		nameLower.includes("memcache") ||
+		nameLower.includes("memcached")
+	) {
+		return "memcached"
+	}
+
+	// Infer from common port numbers
+	return "database"
+}
+
+/**
+ * Recursively scan values for connection addresses
+ */
+function scanForConnections(
+	values: HelmValues,
+	path: string[] = [],
+	results: Map<string, ValuesExternalService> = new Map(),
+): Map<string, ValuesExternalService> {
+	for (const [key, value] of Object.entries(values)) {
+		const currentPath = [...path, key]
+		const keyLower = key.toLowerCase()
+
+		// Check if this key might contain a connection address
+		if (CONNECTION_KEYS.has(keyLower) && typeof value === "string") {
+			const parsed = parseK8sAddress(value)
+			if (parsed) {
+				const id = `external-${parsed.serviceName}`
+				if (!results.has(id)) {
+					results.set(id, {
+						id,
+						name: parsed.serviceName,
+						port: parsed.port,
+						serviceType: inferServiceTypeFromContext(
+							currentPath,
+							parsed.serviceName,
+						),
+					})
+				}
+			}
+		}
+
+		// Check for nested url.host pattern
+		if (keyLower === "url" && isRecord(value)) {
+			const host = getString(value.host) ?? getString(value.hostname)
+			if (host) {
+				const portNum = getNumber(value.port)
+				const addressWithPort = portNum ? `${host}:${portNum}` : host
+				const parsed = parseK8sAddress(addressWithPort)
+				if (parsed) {
+					const id = `external-${parsed.serviceName}`
+					if (!results.has(id)) {
+						results.set(id, {
+							id,
+							name: parsed.serviceName,
+							port: parsed.port,
+							serviceType: inferServiceTypeFromContext(
+								currentPath,
+								parsed.serviceName,
+							),
+						})
+					}
+				}
+			}
+		}
+
+		// Recurse into nested objects, prioritizing datastore contexts
+		if (isRecord(value)) {
+			scanForConnections(value, currentPath, results)
+		}
+
+		// Handle arrays of objects
+		if (Array.isArray(value)) {
+			for (let i = 0; i < value.length; i++) {
+				const item = value[i]
+				if (isRecord(item)) {
+					scanForConnections(item, [...currentPath, `[${i}]`], results)
+				}
+			}
+		}
+	}
+
+	return results
+}
+
+/**
+ * Extract external services referenced in values.yaml connection strings
+ * Looks for Kubernetes DNS patterns in connection-related fields
+ */
+export function extractExternalServicesFromValues(
+	values: HelmValues,
+): ValuesExternalService[] {
+	const results = scanForConnections(values)
+	return Array.from(results.values())
+}

@@ -8,6 +8,7 @@ import { parseChartYaml } from "./chart"
 import { detectComponents } from "./components"
 import { inferEdgesFromRenderedManifests } from "./rendered"
 import {
+	extractExternalServicesFromValues,
 	extractServiceConfig,
 	getBoolean,
 	getNumber,
@@ -61,6 +62,30 @@ function normalizeName(value: string): string {
 		.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
 		.replace(/_/g, "-")
 		.toLowerCase()
+}
+
+function deepMerge(target: HelmValues, source: HelmValues): HelmValues {
+	const result: HelmValues = { ...target }
+
+	for (const [key, sourceValue] of Object.entries(source)) {
+		const targetValue = result[key]
+
+		if (
+			isRecord(sourceValue) &&
+			isRecord(targetValue) &&
+			!Array.isArray(sourceValue) &&
+			!Array.isArray(targetValue)
+		) {
+			result[key] = deepMerge(
+				targetValue as HelmValues,
+				sourceValue as HelmValues,
+			)
+		} else {
+			result[key] = sourceValue
+		}
+	}
+
+	return result
 }
 
 function buildComponentMap(
@@ -259,6 +284,15 @@ export function parseHelmChart(
 		values = parseValuesYaml(valuesContent)
 	}
 
+	// Merge additional values files (later files override earlier ones)
+	for (const valuesFile of options?.valuesFiles ?? []) {
+		if (existsSync(valuesFile)) {
+			const content = readFileSync(valuesFile, "utf-8")
+			const overrideValues = parseValuesYaml(content)
+			values = deepMerge(values, overrideValues)
+		}
+	}
+
 	const builder = new GraphBuilder(project)
 	builder.addSourceFile(resolveSourcePath(sourceRoot, chartPath))
 	if (existsSync(valuesPath)) {
@@ -398,6 +432,33 @@ export function parseHelmChart(
 
 	for (const edge of renderedInference.edges) {
 		builder.addEdge(edge.from, edge.to, edge.type)
+	}
+
+	// Extract external services from values.yaml connection strings (e.g., datastores)
+	const valuesExternalServices = extractExternalServicesFromValues(values)
+	const componentNodeIds = hasComponents
+		? components.map((c) => `${chart.name}-${c.name}`)
+		: [chart.name]
+
+	for (const extService of valuesExternalServices) {
+		// Skip if already added by rendered inference or as a dependency
+		if (builder.hasNode(extService.id)) continue
+
+		builder.addNode(
+			extService.id,
+			extService.name,
+			inferServiceType(extService.name, extService.serviceType),
+			chartSource,
+			{
+				external: true,
+				ports: extService.port ? [{ internal: extService.port }] : undefined,
+			},
+		)
+
+		// Connect all components to this external service
+		for (const componentId of componentNodeIds) {
+			builder.addEdge(componentId, extService.id, "database")
+		}
 	}
 
 	return builder.build()
