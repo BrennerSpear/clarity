@@ -4,6 +4,16 @@ Generate beautiful, hand-drawn style architecture diagrams from your Infrastruct
 
 [![npm version](https://img.shields.io/npm/v/@clarity-tools/cli.svg)](https://www.npmjs.com/package/@clarity-tools/cli)
 
+## Examples
+
+### Temporal
+
+![Temporal architecture](https://raw.githubusercontent.com/BrennerSpear/clarity/main/docs/images/temporal.png)
+
+### Mastodon
+
+![Mastodon architecture](https://raw.githubusercontent.com/BrennerSpear/clarity/main/docs/images/mastodon.png)
+
 ## Features
 
 - **Auto-detection**: Finds docker-compose.yml, compose.yml, and Helm charts
