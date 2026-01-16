@@ -14,7 +14,7 @@ const mockGraph: InfraGraph = {
 		{
 			id: "web",
 			name: "web",
-			type: "container",
+			type: "ui",
 			source: { file: "test.yml", format: "docker-compose" },
 		},
 		{
