@@ -1,17 +1,47 @@
 {
-	"name": "@clarity/cli",
+	"name": "@clarity-tools/cli",
 	"version": "0.1.0",
+	"description": "Generate architecture diagrams from Infrastructure-as-Code files (Docker Compose, Helm charts)",
 	"type": "module",
 	"bin": {
-		"clarity": "./src/index.ts"
+		"iac-diagrams": "./dist/index.js"
 	},
+	"files": ["dist", "README.md"],
 	"scripts": {
+		"build": "tsup",
 		"dev": "bun run src/index.ts",
-		"build": "bun build ./src/index.ts --outdir ./dist --target bun"
+		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
-		"@clarity/core": "workspace:*",
 		"commander": "^12.1.0",
-		"yaml": "^2.6.1"
+		"elkjs": "0.11.0",
+		"puppeteer": "^24.0.0",
+		"yaml": "^2.6.1",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@clarity-tools/core": "workspace:*",
+		"tsup": "^8.0.0",
+		"typescript": "^5.7.2"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/BrennerSpear/colombo"
+	},
+	"keywords": [
+		"docker-compose",
+		"helm",
+		"architecture",
+		"diagrams",
+		"excalidraw",
+		"infrastructure-as-code",
+		"iac"
+	],
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
 	}
 }

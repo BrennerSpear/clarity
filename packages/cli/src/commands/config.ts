@@ -3,11 +3,12 @@ import {
 	loadConfig,
 	maskApiKey,
 	saveConfig,
-} from "@clarity/core"
+} from "@clarity-tools/core"
 import { Command } from "commander"
 
-export const configCommand = new Command("config")
-	.description("Manage Clarity configuration")
+export const configCommand = new Command("config").description(
+	"Manage Clarity configuration",
+)
 
 configCommand
 	.command("set-key <key>")
@@ -30,7 +31,9 @@ configCommand
 		console.log(`Config file: ${configPath}\n`)
 
 		if (config.openRouterApiKey) {
-			console.log(`OpenRouter API key (config): ${maskApiKey(config.openRouterApiKey)}`)
+			console.log(
+				`OpenRouter API key (config): ${maskApiKey(config.openRouterApiKey)}`,
+			)
 		} else if (envKey) {
 			console.log(`OpenRouter API key (env): ${maskApiKey(envKey)}`)
 		} else {
@@ -50,7 +53,9 @@ configCommand
 		console.log("API key cleared")
 
 		if (process.env.OPENROUTER_API_KEY) {
-			console.log("\nNote: OPENROUTER_API_KEY environment variable is still set")
+			console.log(
+				"\nNote: OPENROUTER_API_KEY environment variable is still set",
+			)
 		}
 	})
 

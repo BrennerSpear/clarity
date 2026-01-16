@@ -13,7 +13,7 @@ Clarity generates Excalidraw architecture diagrams from Infrastructure-as-Code f
 bun install
 
 # Run CLI directly (no build needed)
-bun run clarity <command>
+bun run clarity [path]
 
 # Build all packages
 bun run build
@@ -35,30 +35,54 @@ bun run format
 ### CLI Usage
 
 ```bash
-bun run clarity fetch <project> --repo <url>   # Download IaC files
-bun run clarity list                            # List configured projects
-bun run clarity run <project> [--step <name>]  # Execute pipeline
-bun run clarity inspect <project> --run <id>   # View previous run
-bun run clarity config set-key <key>           # Set OpenRouter API key
-bun run clarity config show                    # Show current config
+# Local development (run from repo root)
+bun run clarity                              # Process current directory
+bun run clarity ./docker-compose.yml         # Process specific file
+bun run clarity ./charts/my-app/             # Process Helm chart
+bun run clarity -o ./output/                 # Custom output directory
+bun run clarity --no-llm --no-png            # Skip LLM and PNG
+bun run clarity config set-key <key>         # Set OpenRouter API key
+bun run clarity config show                  # Show current config
+
+# When installed via npm
+iac-diagrams [path] [options]
+iac-diagrams config set-key <key>
 ```
 
 ### Configuration
 
-API key can be set via CLI (`clarity config set-key`) or environment variable `OPENROUTER_API_KEY`. Config stored at `~/.config/clarity/config.json`.
+API key can be set via CLI (`iac-diagrams config set-key`) or environment variable `OPENROUTER_API_KEY`. Config stored at `~/.config/clarity/config.json`.
+
+### npm Publishing
+
+The CLI is published to npm as `@clarity-tools/cli`:
+
+```bash
+# Build CLI for distribution
+cd packages/cli && bun run build
+
+# Publish (requires npm login with access to @clarity-tools org)
+cd packages/cli && npm publish
+```
+
+The package bundles the core library and targets Node.js 18+. Users install with:
+```bash
+npm install -g @clarity-tools/cli
+iac-diagrams --help
+```
 
 ## Architecture
 
 ### Pipeline Stages
 
-The pipeline (packages/core/src/pipeline/index.ts) runs these steps in sequence:
+The pipeline runs these steps in sequence:
 
 1. **parse** - Converts IaC files to `InfraGraph` (Docker Compose and Helm parsers)
 2. **enhance** - Uses OpenRouter API to add service descriptions and group metadata
 3. **layout** - Runs ELK layout algorithm to compute node positions
 4. **generate** - Creates Excalidraw JSON and renders PNG via Puppeteer
 
-Each step saves outputs to `test-data/<project>/runs/<runId>/` with numbered prefixes.
+Output files are saved to the specified output directory (default: `./docs/diagrams/`).
 
 ### Intermediate Graph
 
@@ -88,26 +112,21 @@ The rendering system (packages/core/src/excalidraw/):
 
 ```
 packages/
-├── core/          # Pipeline logic, parsers, LLM client, Excalidraw generation
+├── core/          # @clarity-tools/core - Pipeline logic, parsers, rendering
 │   ├── parsers/   # IaC parsers (docker-compose.ts, helm/)
 │   ├── graph/     # InfraGraph types, Zod schemas
-│   ├── pipeline/  # Orchestration and run storage
+│   ├── pipeline/  # Orchestration (internal project storage)
 │   ├── config/    # API key management (~/.config/clarity/)
 │   ├── llm/       # OpenRouter client and enhancement prompts
 │   ├── elk/       # ELK layout conversion and execution
 │   ├── excalidraw/# Excalidraw JSON generation, PNG rendering
 │   └── output/    # PNG (Puppeteer) and Mermaid debug output
-└── cli/           # Commander.js CLI (fetch, run, list, inspect, config)
+└── cli/           # @clarity-tools/cli - Commander.js CLI
+    └── src/
+        ├── index.ts      # Main entry point
+        ├── generate.ts   # Core generation logic
+        └── commands/     # Subcommands (config)
 ```
-
-### Run Storage
-
-Pipeline runs stored in timestamped directories under `test-data/<project>/runs/`:
-- `meta.json` - Run metadata, timing, status
-- `01-parsed.json` - Graph after parsing
-- `02-enhanced.json` - Graph after LLM enhancement
-- `03-elk-input.json` / `03-elk-output.json` - ELK layout data
-- `diagram.excalidraw` / `diagram.png` - Final outputs
 
 ## Code Style
 
