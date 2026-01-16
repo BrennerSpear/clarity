@@ -1,6 +1,6 @@
 {
 	"name": "@clarity-tools/cli",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Generate architecture diagrams from Infrastructure-as-Code files (Docker Compose, Helm charts)",
 	"type": "module",
 	"bin": {
@@ -29,7 +29,8 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/BrennerSpear/colombo"
+		"url": "https://github.com/BrennerSpear/clarity",
+		"directory": "packages/cli"
 	},
 	"keywords": [
 		"docker-compose",
