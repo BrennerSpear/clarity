@@ -352,6 +352,8 @@ export function infraGraphToElk(
 ): ElkConversionResult
 ```
 
+The conversion assigns ports per edge based on semantic layer order. Edges flowing left-to-right use source east/target west; edges that point to earlier lanes use source west/target east; edges within the same lane use source south/target north to route vertically and avoid U-turns.
+
 The ELK layout is executed via a CJS subprocess (`elk-layout-runner.cjs`) for compatibility with ELK.js's CommonJS module format.
 
 ### Excalidraw Rendering
@@ -388,7 +390,7 @@ Three rendering strategies are available:
 2. **Grouped Renderer** (`render.ts`) - Groups services by dependency path
 3. **Basic Renderer** (`render.ts`) - Simple grid layout fallback
 
-Arrows use Excalidraw's native `elbowed: true` for 90-degree orthogonal routing.
+Arrows use Excalidraw's native `elbowed: true` for 90-degree orthogonal routing. Inferred edges are rendered dashed to distinguish heuristic dependencies from explicit ones.
 
 ### Mermaid Debug Output
 
