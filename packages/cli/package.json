@@ -1,6 +1,6 @@
 {
 	"name": "@clarity-tools/cli",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Generate architecture diagrams from Infrastructure-as-Code files (Docker Compose, Helm charts)",
 	"type": "module",
 	"bin": {
