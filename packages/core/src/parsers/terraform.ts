@@ -756,19 +756,40 @@ function buildDisplayName(block: TerraformBlock): string {
 	// For data stores, prioritize descriptive names based on resource type
 	const resourceType = block.type?.toLowerCase() ?? ""
 	if (resourceType.includes("db_instance") || resourceType.includes("rds")) {
+		// Try descriptive attributes in order of preference
+		const dbKeys = ["db_name", "identifier", "cluster_identifier", "name"]
+		const dbName = block.jsonBody
+			? extractStringAttributeFromJson(block.jsonBody, dbKeys)
+			: extractStringAttributeFromBody(block.body, dbKeys)
+		if (dbName && shouldUseDisplayName(dbName)) return dbName
+		// Fall back to engine type
 		const engine = block.jsonBody
 			? extractStringAttributeFromJson(block.jsonBody, ["engine"])
 			: extractStringAttributeFromBody(block.body, ["engine"])
-		return engine || "db"
+		if (engine && shouldUseDisplayName(engine)) return engine
+		return "db"
 	}
 	if (resourceType.includes("elasticache") || resourceType.includes("redis") || resourceType.includes("memcache")) {
+		// Try descriptive attributes in order of preference
+		const cacheKeys = ["cluster_id", "replication_group_id", "name"]
+		const cacheName = block.jsonBody
+			? extractStringAttributeFromJson(block.jsonBody, cacheKeys)
+			: extractStringAttributeFromBody(block.body, cacheKeys)
+		if (cacheName && shouldUseDisplayName(cacheName)) return cacheName
+		// Fall back to engine type
 		const engine = block.jsonBody
 			? extractStringAttributeFromJson(block.jsonBody, ["engine"])
 			: extractStringAttributeFromBody(block.body, ["engine"])
-		return engine || "redis"
+		if (engine && shouldUseDisplayName(engine)) return engine
+		return "cache"
 	}
 	if (resourceType.includes("s3_bucket")) {
-		return "storage"
+		// Try bucket attribute first, fall back to resource name
+		const bucketAttr = block.jsonBody
+			? extractStringAttributeFromJson(block.jsonBody, ["bucket"])
+			: extractStringAttributeFromBody(block.body, ["bucket"])
+		if (bucketAttr && shouldUseDisplayName(bucketAttr)) return bucketAttr
+		return block.name
 	}
 
 	// For other resources, try to extract a display name from body attributes
